@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
+from database import db
 from backend.database import db
-
 from backend.route.register_route import register_bp
 from backend.route.alert_route import alert_bp
 from backend.route.adminauth_route import login_bp
