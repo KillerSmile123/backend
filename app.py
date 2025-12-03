@@ -1,15 +1,14 @@
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
+import os
+import traceback
 
-from backend.database import db
+# Import your database setup
+from backend.database import init_db, db
 from backend.route.register_route import register_bp
 from backend.route.alert_route import alert_bp
 from backend.route.adminauth_route import login_bp
 from backend.model.user import User
-
-import os
-import traceback
-
 
 app = Flask(
     __name__,
@@ -20,9 +19,7 @@ app = Flask(
 # CORS config
 CORS(app, supports_credentials=True)
 
-# DB config
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost:3306/sunog_db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Secret key
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 
 # Uploads
@@ -30,8 +27,8 @@ UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Init DB
-db.init_app(app)
+# ===== Init DB with Railway MySQL =====
+init_db(app)
 
 # Register Blueprints
 app.register_blueprint(register_bp)
@@ -48,25 +45,18 @@ def send_alert():
         photo = request.files.get('photo')
         video = request.files.get('video')
 
-        # Validation
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
         if not photo and not video:
             return jsonify({'message': 'At least a photo or a video is required'}), 400
 
-        # Save media
-        photo_filename = None
-        video_filename = None
+        photo_filename = os.path.join(app.config['UPLOAD_FOLDER'], photo.filename) if photo else None
+        video_filename = os.path.join(app.config['UPLOAD_FOLDER'], video.filename) if video else None
 
-        if photo:
-            photo_filename = os.path.join(app.config['UPLOAD_FOLDER'], photo.filename)
-            photo.save(photo_filename)
+        if photo: photo.save(photo_filename)
+        if video: video.save(video_filename)
 
-        if video:
-            video_filename = os.path.join(app.config['UPLOAD_FOLDER'], video.filename)
-            video.save(video_filename)
-
-        # Simulate saving to DB or logging
+        # Log alert (or save to DB if needed)
         print("🔥 Fire Alert Received!")
         print("Description:", description)
         print("Location:", latitude, longitude)
@@ -83,7 +73,7 @@ def send_alert():
 # ===== ✅ Admin Resolved Alerts Page =====
 @app.route('/alertResolve')
 def admin_resolve():
-    return render_template('alertResolve.html')  # Make sure this file exists in /templates
+    return render_template('alertResolve.html')
 
 # ===== Health Check =====
 @app.route('/health')

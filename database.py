@@ -1,19 +1,28 @@
-import os
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask
 
 db = SQLAlchemy()
 
 def init_db(app: Flask):
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
-    host = os.getenv("DB_HOST")
-    port = os.getenv("DB_PORT")
-    name = os.getenv("DB_NAME")
+    # Railway MySQL credentials
+    user = "root"
+    password = "cSpXneUycqnISaIiJmhUbYzcpPgjUVOR"
+    host = "interchange.proxy.rlwy.net"
+    port = "18561"
+    name = "railway"
 
+    # SQLAlchemy connection string
     app.config['SQLALCHEMY_DATABASE_URI'] = (
-        f'mysql+pymysql://{user}:{password}@{host}:{port}/{name}?charset=utf8mb4'
+        f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}?charset=utf8mb4"
     )
-
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
     db.init_app(app)
+
+    # Optional: test connection
+    try:
+        with app.app_context():
+            db.engine.connect()
+            print("Connected to Railway MySQL successfully!")
+    except Exception as e:
+        print("Database connection error:", e)
