@@ -4,11 +4,11 @@ import os
 import traceback
 
 # Import your database setup
-from backend.database import init_db, db
-from backend.route.register_route import register_bp
-from backend.route.alert_route import alert_bp
-from backend.route.adminauth_route import login_bp
-from backend.model.user import User
+from database import init_db, db
+from route.register_route import register_bp
+from route.alert_route import alert_bp
+from route.adminauth_route import login_bp
+from model.user import User
 
 app = Flask(
     __name__,
