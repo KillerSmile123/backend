@@ -1,6 +1,6 @@
 from flask import request, Blueprint
-from backend.database import db
-from backend.model.alert_model import Alert
+from database import db
+from model.alert_model import Alert
 import os
 
 alert_bp = Blueprint('alert', __name__)

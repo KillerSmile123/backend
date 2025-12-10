@@ -1,6 +1,6 @@
 # backend/model/admin_model.py
 
-from backend.database import db  # ✅ Import db FIRST
+from database import db  # ✅ Import db FIRST
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class Admin(db.Model):
