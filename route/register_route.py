@@ -4,8 +4,8 @@ import time
 from email.mime.text import MIMEText
 from flask import Blueprint, request, jsonify, make_response
 
-from backend.database import db
-from backend.model.user import User
+from database import db
+from model.user import User
 
 register_bp = Blueprint('register_bp', __name__)
 
