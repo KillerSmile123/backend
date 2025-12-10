@@ -9,7 +9,7 @@ from model.user import User
 
 register_bp = Blueprint('register_bp', __name__)
 
-# Store OTPs temporarily in memory with timestamps
+# Store OTPs temporarily in memory with timestamps  1q 
 otp_store = {}
 
 # Email configuration
