@@ -1,21 +1,21 @@
-from flask import request, Blueprint
+from flask import request, Blueprint, send_file
 from database import db
 from model.alert_model import Alert
 import os
 
 alert_bp = Blueprint('alert', __name__)
 
-# Get the absolute path to the backend directory
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BACKEND_DIR, 'uploads')
-
-# Ensure uploads folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
+# --------------------------
+# SEND ALERT
+# --------------------------
 @alert_bp.route('/send_alert', methods=['POST'])
 def send_alert():
     description = request.form.get('description')
-
     try:
         latitude = float(request.form.get('latitude') or 0.0)
         longitude = float(request.form.get('longitude') or 0.0)
@@ -28,38 +28,44 @@ def send_alert():
     photo_filename = None
     video_filename = None
 
-    # Save uploaded files if any
     if photo:
         photo_filename = photo.filename
-        photo_path = os.path.join(UPLOAD_FOLDER, photo_filename)
-        try:
-            photo.save(photo_path)
-        except Exception as e:
-            return {"error": f"Failed to save photo: {str(e)}"}, 500
-
+        photo.save(os.path.join(UPLOAD_FOLDER, photo_filename))
     if video:
         video_filename = video.filename
-        video_path = os.path.join(UPLOAD_FOLDER, video_filename)
-        try:
-            video.save(video_path)
-        except Exception as e:
-            return {"error": f"Failed to save video: {str(e)}"}, 500
+        video.save(os.path.join(UPLOAD_FOLDER, video_filename))
 
-    # Save to DB
-    try:
-        alert = Alert(
-            description=description,
-            latitude=latitude,
-            longitude=longitude,
-            photo_filename=photo_filename,
-            video_filename=video_filename
-        )
+    alert = Alert(
+        description=description,
+        latitude=latitude,
+        longitude=longitude,
+        photo_filename=photo_filename,
+        video_filename=video_filename
+    )
 
-        db.session.add(alert)
-        db.session.commit()
-        
-        return {"message": "Alert sent successfully!"}, 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return {"error": f"Database error: {str(e)}"}, 500
+    db.session.add(alert)
+    db.session.commit()
+    return {"message": "Alert sent successfully!"}, 200
+
+
+# --------------------------
+# CLEAR ALERT HISTORY
+# --------------------------
+@alert_bp.route('/api/alerts/user/<int:user_id>', methods=['DELETE'])
+def clear_alerts(user_id):
+    alerts = Alert.query.filter_by(user_id=user_id).all()
+    for alert in alerts:
+        db.session.delete(alert)
+    db.session.commit()
+    return {"message": "Alert history cleared"}
+
+
+# --------------------------
+# DOWNLOAD FIRE CONTACTS PDF
+# --------------------------
+@alert_bp.route('/api/fire/contacts/pdf', methods=['GET'])
+def download_contacts_pdf():
+    path = os.path.join(BACKEND_DIR, "docs/contacts.pdf")
+    if not os.path.exists(path):
+        return {"error": "PDF not found"}, 404
+    return send_file(path, as_attachment=True)

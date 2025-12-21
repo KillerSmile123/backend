@@ -3,18 +3,46 @@ from flask_cors import CORS
 import os
 import traceback
 
+from dijkstra import dijkstra
+from graph_data import road_graph
+
 # Import your database setup
 from database import init_db, db
 from route.register_route import register_bp
 from route.alert_route import alert_bp
 from route.adminauth_route import login_bp
+from route.userauth_route import auth_bp
 from model.user import User
+
+from node_coordinates import node_coords
+
 
 app = Flask(
     __name__,
     template_folder='sunog_User/templates',
-    static_folder='sunog_User/static'
+    static_folder='sunog_User/static' 
 )
+app.register_blueprint(auth_bp)
+
+#Dijkstra
+@app.route('/get-shortest-route')
+def get_shortest_route():
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    path = dijkstra(road_graph, start, end)
+
+    if not path:
+        return jsonify({"error": "No path found"}), 404
+
+    try:
+        coords = [node_coords[node] for node in path]
+    except KeyError as e:
+        return jsonify({"error": f"Missing node coordinate: {e}"}), 500
+
+    return jsonify(coords)
+
+
 
 # CORS config
 CORS(app, supports_credentials=True)
