@@ -6,9 +6,9 @@ db = SQLAlchemy()
 def init_db(app: Flask):
     # Railway MySQL credentials
     user = "root"
-    password = "cSpXneUycqnISaIiJmhUbYzcpPgjUVOR"
-    host = "interchange.proxy.rlwy.net"
-    port = "18561"
+    password = "EkWtqIHFUsYPygWVBVisnJMoBLmLSnlc"
+    host = "mainline.proxy.rlwy.net"
+    port = "11651"
     name = "railway"
 
     # SQLAlchemy connection string
