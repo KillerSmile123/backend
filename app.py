@@ -16,13 +16,34 @@ from model.user import User
 
 from node_coordinates import node_coords
 
+from dotenv import load_dotenv
 
-app = Flask(
-    __name__,
-    template_folder='sunog_User/templates',
-    static_folder='sunog_User/static' 
-)
-app.register_blueprint(auth_bp)
+
+load_dotenv()
+
+app = Flask(__name__)
+
+# CORS config - MUST come before registering blueprints
+CORS(app, 
+     resources={r"/*": {"origins": "*"}},
+     supports_credentials=True)
+
+# Secret key
+app.config['SECRET_KEY'] = 'your-secret-key-here'
+
+# Uploads
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# ===== Init DB with Railway MySQL =====
+init_db(app)
+
+# Register Blueprints with URL prefixes to avoid conflicts
+app.register_blueprint(auth_bp, url_prefix='/user')        # User routes
+app.register_blueprint(login_bp,)      # Admin routes
+app.register_blueprint(register_bp)
+app.register_blueprint(alert_bp)
 
 #Dijkstra
 @app.route('/get-shortest-route')
@@ -41,27 +62,6 @@ def get_shortest_route():
         return jsonify({"error": f"Missing node coordinate: {e}"}), 500
 
     return jsonify(coords)
-
-
-
-# CORS config
-CORS(app, supports_credentials=True)
-
-# Secret key
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-
-# Uploads
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# ===== Init DB with Railway MySQL =====
-init_db(app)
-
-# Register Blueprints
-app.register_blueprint(register_bp)
-app.register_blueprint(alert_bp)
-app.register_blueprint(login_bp)
 
 # ===== 🚨 Fire Alert Endpoint =====
 @app.route('/send_alert', methods=['POST'])
@@ -133,4 +133,4 @@ with app.app_context():
 
 # ===== Run App =====
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8000, debug=True)
+    app.run(port=5000, debug=True)
