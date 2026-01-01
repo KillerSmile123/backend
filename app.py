@@ -3,6 +3,8 @@ from flask_cors import CORS
 import os
 import traceback
 
+from sqlalchemy import text
+
 from dijkstra import dijkstra
 from graph_data import road_graph
 
@@ -104,18 +106,20 @@ def admin_resolve():
     return render_template('alertResolve.html')
 
 # ===== Health Check =====
-@app.route('/health')
-def health_check():
+@app.route("/health")
+def health():
     try:
-        db.session.execute('SELECT 1')
-        db_status = 'connected'
-    except:
-        db_status = 'disconnected'
+        with db.engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        print("DB ERROR:", e)
+        db_status = "disconnected"
 
     return jsonify({
-        'status': 'healthy',
-        'database': db_status,
-        'cors': 'enabled'
+        "status": "healthy",
+        "database": db_status,
+        "cors": "enabled"
     })
 
 # ===== Error Handlers =====
