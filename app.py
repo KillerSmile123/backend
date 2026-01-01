@@ -31,7 +31,7 @@ CORS(app,
      supports_credentials=True)
 
 # Secret key
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
 
 # Uploads
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
@@ -121,6 +121,19 @@ def health():
         "database": db_status,
         "cors": "enabled"
     })
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    ...
+
+@app.route("/api/register", methods=["POST"])
+def register():
+    ...
+
+@app.route("/api/alert", methods=["POST"])
+def create_alert():
+    ...
+
 
 # ===== Error Handlers =====
 @app.errorhandler(404)
