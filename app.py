@@ -60,6 +60,24 @@ app.register_blueprint(login_bp,)      # Admin routes
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
 
+# Add this after your blueprint registrations and before the other routes
+
+@app.route('/')
+def home():
+    return jsonify({
+        "message": "Sunog API is running",
+        "status": "ok",
+        "endpoints": {
+            "health": "/health",
+            "shortest_route": "/get-shortest-route",
+            "send_alert": "/send_alert",
+            "user_auth": "/user/*",
+            "admin_auth": "/admin/*",
+            "alerts": "/alerts/*"
+        }
+    })
+
+
 #Dijkstra
 @app.route('/get-shortest-route')
 def get_shortest_route():
@@ -134,18 +152,6 @@ def health():
         "database": db_status,
         "cors": "enabled"
     })
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    ...
-
-@app.route("/api/register", methods=["POST"])
-def register():
-    ...
-
-@app.route("/api/alert", methods=["POST"])
-def create_alert():
-    ...
 
 
 # ===== Error Handlers =====
