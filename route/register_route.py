@@ -1,5 +1,5 @@
 import random
-import smtplib
+import requests
 import time
 from email.mime.text import MIMEText
 from flask import Blueprint, request, jsonify
@@ -9,6 +9,7 @@ import os
 
 from database import db
 from model.user import User
+
 
 load_dotenv()
 
@@ -38,31 +39,47 @@ def clean_expired_otps():
 # Send OTP via Brevo
 # -------------------------------
 def send_otp_email(receiver_email, otp):
-    if not BREVO_EMAIL or not BREVO_SMTP_KEY:
-        print("❌ BREVO ENV VARIABLES NOT SET")
+    if not BREVO_SMTP_KEY:
+        print("❌ BREVO API KEY NOT SET")
         return False
 
-    msg = MIMEMultipart()
-    msg["From"] = BREVO_EMAIL
-    msg["To"] = receiver_email
-    msg["Subject"] = "Your Registration OTP Code"
+    url = "https://api.brevo.com/v3/smtp/email"
 
-    msg.attach(MIMEText(
-        f"Your OTP code is: {otp}\n\nThis code will expire in 5 minutes.",
-        "plain"
-    ))
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_SMTP_KEY,
+        "content-type": "application/json"
+    }
+
+    payload = {
+        "sender": {
+            "name": "SUNOG Alert System",
+            "email": BREVO_EMAIL
+        },
+        "to": [
+            {"email": receiver_email}
+        ],
+        "subject": "Your Registration OTP Code",
+        "textContent": f"Your OTP code is {otp}. It expires in 5 minutes."
+    }
 
     try:
-        server = smtplib.SMTP("smtp-relay.brevo.com", 587, timeout=10)
-        server.starttls()
-        server.login(BREVO_EMAIL, BREVO_SMTP_KEY)
-        server.send_message(msg)
-        server.quit()
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code not in [200, 201, 202]:
+            print("❌ Brevo API Error:", response.text)
+            return False
+
         print(f"✅ OTP sent to {receiver_email}")
         return True
 
     except Exception as e:
-        print("❌ Brevo SMTP Error:", e)
+        print("❌ Brevo API Exception:", e)
         return False
 
 # -------------------------------
