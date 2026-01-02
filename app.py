@@ -25,23 +25,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ FIXED CORS config - MUST come before registering blueprints
+# CORS config - MUST come before registering blueprints
 CORS(app, 
-     resources={
-         r"/*": {
-             "origins": [
-                 "https://sunog-user.onrender.com",
-                 "https://sunog-admin.onrender.com",
-                 "http://localhost:3000",
-                 "http://localhost:5000",
-                 "http://127.0.0.1:3000",
-                 "http://127.0.0.1:5000"
-             ],
-             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"],
-             "supports_credentials": True
-         }
-     })
+     resources={r"/*": {"origins": "*"}},
+     supports_credentials=True)
 
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
@@ -59,24 +46,6 @@ app.register_blueprint(auth_bp, url_prefix='/user')        # User routes
 app.register_blueprint(login_bp,)      # Admin routes
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
-
-# Add this after your blueprint registrations and before the other routes
-
-@app.route('/')
-def home():
-    return jsonify({
-        "message": "Sunog API is running",
-        "status": "ok",
-        "endpoints": {
-            "health": "/health",
-            "shortest_route": "/get-shortest-route",
-            "send_alert": "/send_alert",
-            "user_auth": "/user/*",
-            "admin_auth": "/admin/*",
-            "alerts": "/alerts/*"
-        }
-    })
-
 
 #Dijkstra
 @app.route('/get-shortest-route')
@@ -152,6 +121,18 @@ def health():
         "database": db_status,
         "cors": "enabled"
     })
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    ...
+
+@app.route("/api/register", methods=["POST"])
+def register():
+    ...
+
+@app.route("/api/alert", methods=["POST"])
+def create_alert():
+    ...
 
 
 # ===== Error Handlers =====
