@@ -15,15 +15,15 @@ load_dotenv()
 BREVO_EMAIL = os.getenv("BREVO_EMAIL")
 BREVO_SMTP_KEY = os.getenv("BREVO_SMTP_KEY")
 
-register_bp = Blueprint('register', __name__)
+register_bp = Blueprint("register", __name__)
 
-# Store OTPs temporarily in memory with timestamps
+# Store OTPs temporarily in memory
 otp_store = {}
 
 OTP_EXPIRY_SECONDS = 300  # 5 minutes
 
 # -------------------------------
-# Helper: Clean expired OTPs
+# Clean expired OTPs
 # -------------------------------
 def clean_expired_otps():
     current_time = time.time()
@@ -35,114 +35,113 @@ def clean_expired_otps():
         del otp_store[email]
 
 # -------------------------------
-# Helper: Send OTP via Brevo
+# Send OTP via Brevo
 # -------------------------------
 def send_otp_email(receiver_email, otp):
+    if not BREVO_EMAIL or not BREVO_SMTP_KEY:
+        print("❌ BREVO ENV VARIABLES NOT SET")
+        return False
+
     msg = MIMEMultipart()
-    msg["From"] = "markgodwill15@gmail.com"  # This is the sender displayed to recipients
+    msg["From"] = BREVO_EMAIL
     msg["To"] = receiver_email
     msg["Subject"] = "Your Registration OTP Code"
 
     msg.attach(MIMEText(
-        f"""
-        Your OTP code is: {otp}
-
-        This code will expire in 5 minutes.
-
-        If you did not request this, please ignore this email.
-                """,
-                "plain"
+        f"Your OTP code is: {otp}\n\nThis code will expire in 5 minutes.",
+        "plain"
     ))
 
     try:
-        server = smtplib.SMTP("smtp-relay.brevo.com", 587)
+        server = smtplib.SMTP("smtp-relay.brevo.com", 587, timeout=10)
         server.starttls()
         server.login(BREVO_EMAIL, BREVO_SMTP_KEY)
         server.send_message(msg)
         server.quit()
-        print(f"✅ OTP sent successfully to {receiver_email}")
+        print(f"✅ OTP sent to {receiver_email}")
         return True
-    except Exception as e:
-        print("❌ Brevo email error:", e)
-        import traceback
-        traceback.print_exc()
-        return False
 
-# Rest of your code stays the same...
-# (send_otp and register routes)
+    except Exception as e:
+        print("❌ Brevo SMTP Error:", e)
+        return False
 
 # -------------------------------
 # Send OTP Route
 # -------------------------------
 @register_bp.route("/send_otp", methods=["POST"])
 def send_otp():
-    clean_expired_otps()
+    try:
+        clean_expired_otps()
 
-    data = request.get_json()
-    gmail = data.get("gmail") if data else None
+        data = request.get_json(silent=True)
+        gmail = data.get("gmail") if data else None
 
-    if not gmail:
-        return jsonify({"message": "Gmail is required"}), 400
+        if not gmail:
+            return jsonify({"message": "Gmail is required"}), 400
 
-    # Check existing user
-    if User.query.filter_by(gmail=gmail).first():
-        return jsonify({"message": "Gmail already registered"}), 409
+        if User.query.filter_by(gmail=gmail).first():
+            return jsonify({"message": "Gmail already registered"}), 409
 
-    # Generate OTP
-    otp = str(random.randint(100000, 999999))
+        otp = str(random.randint(100000, 999999))
 
-    otp_store[gmail] = {
-        "otp": otp,
-        "timestamp": time.time()
-    }
+        otp_store[gmail] = {
+            "otp": otp,
+            "timestamp": time.time()
+        }
 
-    if not send_otp_email(gmail, otp):
-        return jsonify({"message": "Failed to send OTP"}), 500
+        if not send_otp_email(gmail, otp):
+            return jsonify({"message": "Failed to send OTP"}), 500
 
-    return jsonify({
-        "message": "OTP sent successfully",
-        "expires_in": OTP_EXPIRY_SECONDS
-    }), 200
+        return jsonify({
+            "message": "OTP sent successfully",
+            "expires_in": OTP_EXPIRY_SECONDS
+        }), 200
+
+    except Exception as e:
+        print("❌ /send_otp ERROR:", e)
+        return jsonify({"message": "Server error"}), 500
 
 # -------------------------------
 # Register User Route
 # -------------------------------
 @register_bp.route("/register", methods=["POST"])
 def register():
-    data = request.get_json()
-
-    required_fields = ["fullname", "address", "mobile", "gmail", "otp"]
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({"message": f"{field} is required"}), 400
-
-    gmail = data["gmail"]
-    otp = data["otp"]
-
-    stored = otp_store.get(gmail)
-    if not stored:
-        return jsonify({"message": "OTP not found or expired"}), 400
-
-    if time.time() - stored["timestamp"] > OTP_EXPIRY_SECONDS:
-        del otp_store[gmail]
-        return jsonify({"message": "OTP expired"}), 400
-
-    if stored["otp"] != otp:
-        return jsonify({"message": "Invalid OTP"}), 400
-
-    if User.query.filter_by(gmail=gmail).first():
-        return jsonify({"message": "Gmail already exists"}), 409
-
     try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"message": "Invalid request"}), 400
+
+        required_fields = ["fullname", "address", "mobile", "gmail", "otp"]
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"message": f"{field} is required"}), 400
+
+        gmail = data["gmail"]
+        otp = data["otp"]
+
+        stored = otp_store.get(gmail)
+        if not stored:
+            return jsonify({"message": "OTP not found or expired"}), 400
+
+        if time.time() - stored["timestamp"] > OTP_EXPIRY_SECONDS:
+            del otp_store[gmail]
+            return jsonify({"message": "OTP expired"}), 400
+
+        if stored["otp"] != otp:
+            return jsonify({"message": "Invalid OTP"}), 400
+
+        if User.query.filter_by(gmail=gmail).first():
+            return jsonify({"message": "Gmail already exists"}), 409
+
         new_user = User(
             fullname=data["fullname"],
             address=data["address"],
             mobile=data["mobile"],
             gmail=gmail
         )
+
         db.session.add(new_user)
         db.session.commit()
-
         del otp_store[gmail]
 
         return jsonify({
@@ -152,7 +151,5 @@ def register():
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            "message": "Registration failed",
-            "error": str(e)
-        }), 500
+        print("❌ /register ERROR:", e)
+        return jsonify({"message": "Registration failed"}), 500
