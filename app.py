@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
+from flask import send_from_directory
 import os
 import traceback
 
@@ -168,6 +169,12 @@ def get_alerts():
         print("❌ Error fetching alerts:", str(e))
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
+
+
+#Uploaded Files
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # ===== ✅ Admin Resolved Alerts Page =====
 @app.route('/alertResolve')
