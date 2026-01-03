@@ -28,7 +28,7 @@ app = Flask(__name__)
 # CORS config - MUST come before registering blueprints
 CORS(app,  supports_credentials=True,
      resources={r"/*": {"origins": [
-            "https://sunog-user.onrender.com"  ]}})
+            "https://sunog-user.onrender.com", "https://sunog-admin.onrender.com"  ]}})
 
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
