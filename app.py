@@ -15,6 +15,7 @@ from route.alert_route import alert_bp
 from route.adminauth_route import login_bp
 from route.userauth_route import auth_bp
 from model.user import User
+from model.alert_model import Alert  # ✅ Add this import
 
 from node_coordinates import node_coords
 
@@ -26,9 +27,17 @@ load_dotenv()
 app = Flask(__name__)
 
 # CORS config - MUST come before registering blueprints
-CORS(app,  supports_credentials=True,
-     resources={r"/*": {"origins": [
-            "https://sunog-user.onrender.com", "https://sunog-admin.onrender.com"  ]}})
+CORS(app, supports_credentials=True,
+     resources={r"/*": {
+         "origins": [
+             "https://sunog-user.onrender.com", 
+             "https://sunog-admin.onrender.com",
+             "http://localhost:3000",
+             "http://localhost:5000"
+         ],
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization"]
+     }})
 
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
@@ -43,7 +52,7 @@ init_db(app)
 
 # Register Blueprints with URL prefixes to avoid conflicts
 app.register_blueprint(auth_bp, url_prefix='/user')        # User routes
-app.register_blueprint(login_bp,)      # Admin routes
+app.register_blueprint(login_bp)      # Admin routes
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
 
@@ -65,9 +74,13 @@ def get_shortest_route():
 
     return jsonify(coords)
 
-# ===== 🚨 Fire Alert Endpoint =====
-@app.route('/send_alert', methods=['POST'])
+# ===== 🚨 Fire Alert Endpoint (UPDATED to save to database) =====
+@app.route('/send_alert', methods=['POST', 'OPTIONS'])
 def send_alert():
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
         description = request.form.get('description')
         latitude = request.form.get('latitude')
@@ -80,23 +93,79 @@ def send_alert():
         if not photo and not video:
             return jsonify({'message': 'At least a photo or a video is required'}), 400
 
-        photo_filename = os.path.join(app.config['UPLOAD_FOLDER'], photo.filename) if photo else None
-        video_filename = os.path.join(app.config['UPLOAD_FOLDER'], video.filename) if video else None
+        # Save files
+        photo_filename = None
+        video_filename = None
+        
+        if photo:
+            photo_filename = photo.filename
+            photo.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+            
+        if video:
+            video_filename = video.filename
+            video.save(os.path.join(app.config['UPLOAD_FOLDER'], video_filename))
 
-        if photo: photo.save(photo_filename)
-        if video: video.save(video_filename)
+        # ✅ Save to database
+        new_alert = Alert(
+            description=description,
+            latitude=float(latitude),
+            longitude=float(longitude),
+            photo_filename=photo_filename,
+            video_filename=video_filename
+        )
+        
+        db.session.add(new_alert)
+        db.session.commit()
 
-        # Log alert (or save to DB if needed)
-        print("🔥 Fire Alert Received!")
+        print("🔥 Fire Alert Saved to Database!")
+        print(f"Alert ID: {new_alert.id}")
         print("Description:", description)
         print("Location:", latitude, longitude)
-        print("Photo:", photo.filename if photo else 'None')
-        print("Video:", video.filename if video else 'None')
+        print("Photo:", photo_filename if photo_filename else 'None')
+        print("Video:", video_filename if video_filename else 'None')
 
-        return jsonify({'message': 'Fire alert received successfully'}), 200
+        return jsonify({
+            'message': 'Fire alert received successfully',
+            'alert_id': new_alert.id
+        }), 200
 
     except Exception as e:
         print("❌ Error:", str(e))
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+
+# ✅ NEW: Get all alerts for admin dashboard
+@app.route('/get_alerts', methods=['GET', 'OPTIONS'])
+def get_alerts():
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        # Fetch alerts from database (most recent first)
+        alerts = Alert.query.order_by(Alert.timestamp.desc()).all()
+        
+        # Convert to JSON format
+        alerts_list = []
+        for alert in alerts:
+            alerts_list.append({
+                'id': alert.id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'photo_filename': alert.photo_filename,
+                'video_filename': alert.video_filename,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None
+            })
+        
+        return jsonify({
+            'alerts': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print("❌ Error fetching alerts:", str(e))
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
