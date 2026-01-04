@@ -15,18 +15,20 @@ from route.alert_route import alert_bp
 from route.adminauth_route import login_bp
 from route.userauth_route import auth_bp
 from model.user import User
-from model.alert_model import Alert  # ✅ Add this import
+from model.alert_model import Alert
 
 from node_coordinates import node_coords
 
 from dotenv import load_dotenv
 
+# ✅ Import Cloudinary functions
+from cloudinary_config import init_cloudinary, upload_to_cloudinary, delete_from_cloudinary
 
 load_dotenv()
 
 app = Flask(__name__)
 
-# CORS config - MUST come before registering blueprints
+# CORS config
 CORS(app, supports_credentials=True,
      resources={r"/*": {
          "origins": [
@@ -42,21 +44,24 @@ CORS(app, supports_credentials=True,
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
 
-# Uploads
+# ✅ Initialize Cloudinary
+init_cloudinary()
+
+# Uploads folder (keep for backward compatibility if needed)
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# ===== Init DB with Railway MySQL =====
+# Init DB with Railway MySQL
 init_db(app)
 
-# Register Blueprints with URL prefixes to avoid conflicts
-app.register_blueprint(auth_bp, url_prefix='/user')        # User routes
-app.register_blueprint(login_bp)      # Admin routes
+# Register Blueprints
+app.register_blueprint(auth_bp, url_prefix='/user')
+app.register_blueprint(login_bp)
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
 
-#Dijkstra
+# Dijkstra route
 @app.route('/get-shortest-route')
 def get_shortest_route():
     start = request.args.get('start')
@@ -74,10 +79,9 @@ def get_shortest_route():
 
     return jsonify(coords)
 
-# ===== 🚨 Fire Alert Endpoint (UPDATED to save to database) =====
+# ✅ UPDATED Fire Alert Endpoint with Cloudinary
 @app.route('/send_alert', methods=['POST', 'OPTIONS'])
 def send_alert():
-    # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
         return '', 204
         
@@ -93,40 +97,52 @@ def send_alert():
         if not photo and not video:
             return jsonify({'message': 'At least a photo or a video is required'}), 400
 
-        # Save files
-        photo_filename = None
-        video_filename = None
+        # ✅ Upload to Cloudinary instead of local storage
+        photo_url = None
+        photo_public_id = None
+        video_url = None
+        video_public_id = None
         
         if photo:
-            photo_filename = photo.filename
-            photo.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+            photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
+            if photo_result['success']:
+                photo_url = photo_result['url']
+                photo_public_id = photo_result['public_id']
+            else:
+                return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
             
         if video:
-            video_filename = video.filename
-            video.save(os.path.join(app.config['UPLOAD_FOLDER'], video_filename))
+            video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
+            if video_result['success']:
+                video_url = video_result['url']
+                video_public_id = video_result['public_id']
+            else:
+                return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
-        # ✅ Save to database
+        # ✅ Save to database with Cloudinary URLs
         new_alert = Alert(
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
-            photo_filename=photo_filename,
-            video_filename=video_filename
+            photo_filename=photo_url,  # Store Cloudinary URL instead of filename
+            video_filename=video_url   # Store Cloudinary URL instead of filename
         )
         
         db.session.add(new_alert)
         db.session.commit()
 
-        print("🔥 Fire Alert Saved to Database!")
+        print("🔥 Fire Alert Saved to Database with Cloudinary!")
         print(f"Alert ID: {new_alert.id}")
         print("Description:", description)
         print("Location:", latitude, longitude)
-        print("Photo:", photo_filename if photo_filename else 'None')
-        print("Video:", video_filename if video_filename else 'None')
+        print("Photo URL:", photo_url if photo_url else 'None')
+        print("Video URL:", video_url if video_url else 'None')
 
         return jsonify({
             'message': 'Fire alert received successfully',
-            'alert_id': new_alert.id
+            'alert_id': new_alert.id,
+            'photo_url': photo_url,
+            'video_url': video_url
         }), 200
 
     except Exception as e:
@@ -135,18 +151,15 @@ def send_alert():
         db.session.rollback()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-# ✅ NEW: Get all alerts for admin dashboard
+# ✅ Get all alerts (already returns URLs from database)
 @app.route('/get_alerts', methods=['GET', 'OPTIONS'])
 def get_alerts():
-    # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
         return '', 204
         
     try:
-        # Fetch alerts from database (most recent first)
         alerts = Alert.query.order_by(Alert.timestamp.desc()).all()
         
-        # Convert to JSON format
         alerts_list = []
         for alert in alerts:
             alerts_list.append({
@@ -154,8 +167,8 @@ def get_alerts():
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
-                'photo_filename': alert.photo_filename,
-                'video_filename': alert.video_filename,
+                'photo_url': alert.photo_filename,  # Now contains Cloudinary URL
+                'video_url': alert.video_filename,  # Now contains Cloudinary URL
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None
             })
         
@@ -169,7 +182,47 @@ def get_alerts():
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-# ===== Serve Uploaded Files =====
+# ✅ OPTIONAL: Delete alert endpoint (also deletes from Cloudinary)
+@app.route('/delete_alert/<int:alert_id>', methods=['DELETE', 'OPTIONS'])
+def delete_alert(alert_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'message': 'Alert not found'}), 404
+        
+        # Delete from Cloudinary if URLs exist
+        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
+            # Extract public_id from URL
+            # URL format: https://res.cloudinary.com/cloud_name/image/upload/v123456/fire_alerts/photos/abc123.jpg
+            parts = alert.photo_filename.split('/')
+            if 'fire_alerts' in parts:
+                idx = parts.index('fire_alerts')
+                public_id = '/'.join(parts[idx:]).split('.')[0]
+                delete_from_cloudinary(public_id, resource_type="image")
+        
+        if alert.video_filename and 'cloudinary.com' in alert.video_filename:
+            parts = alert.video_filename.split('/')
+            if 'fire_alerts' in parts:
+                idx = parts.index('fire_alerts')
+                public_id = '/'.join(parts[idx:]).split('.')[0]
+                delete_from_cloudinary(public_id, resource_type="video")
+        
+        # Delete from database
+        db.session.delete(alert)
+        db.session.commit()
+        
+        return jsonify({'message': 'Alert deleted successfully'}), 200
+        
+    except Exception as e:
+        print("❌ Error deleting alert:", str(e))
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+
+# Serve uploaded files (keep for backward compatibility with old data)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     try:
@@ -178,12 +231,10 @@ def uploaded_file(filename):
         print(f"Error serving file {filename}:", e)
         return jsonify({'message': 'File not found'}), 404
 
-# ===== ✅ Admin Resolved Alerts Page =====
 @app.route('/alertResolve')
 def admin_resolve():
     return render_template('alertResolve.html')
 
-# ===== Health Check =====
 @app.route("/health")
 def health():
     try:
@@ -212,8 +263,7 @@ def register():
 def create_alert():
     ...
 
-
-# ===== Error Handlers =====
+# Error Handlers
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'message': 'Endpoint not found'}), 404
@@ -222,10 +272,10 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'message': 'Internal server error'}), 500
 
-# ===== Create Tables =====
+# Create Tables
 with app.app_context():
     db.create_all()
 
-# ===== Run App =====
+# Run App
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
