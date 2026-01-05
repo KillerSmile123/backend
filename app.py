@@ -98,14 +98,19 @@ def send_alert():
         description = request.form.get('description')
         latitude = request.form.get('latitude')
         longitude = request.form.get('longitude')
+        
+        # ✅ Get new fields (barangay and reporter name)
+        barangay = request.form.get('barangay')
+        reporter_name = request.form.get('reporter_name')
+        
         photo = request.files.get('photo')
         video = request.files.get('video')
 
         app.logger.info(f"📥 Received alert submission:")
         app.logger.info(f"  Description: {description}")
+        app.logger.info(f"  Barangay: {barangay}")
+        app.logger.info(f"  Reporter: {reporter_name}")
         app.logger.info(f"  Latitude: {latitude}, Longitude: {longitude}")
-        app.logger.info(f"  Photo: {photo.filename if photo else 'None'}")
-        app.logger.info(f"  Video: {video.filename if video else 'None'}")
 
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
@@ -114,21 +119,15 @@ def send_alert():
 
         # ✅ Upload to Cloudinary
         photo_url = None
-        photo_public_id = None
         video_url = None
-        video_public_id = None
         
         if photo:
             app.logger.info(f"📤 Uploading photo to Cloudinary: {photo.filename}")
             photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
             if photo_result['success']:
                 photo_url = photo_result['url']
-                photo_public_id = photo_result['public_id']
                 app.logger.info(f"✅ Photo uploaded successfully!")
-                app.logger.info(f"   URL: {photo_url}")
-                app.logger.info(f"   Public ID: {photo_public_id}")
             else:
-                app.logger.error(f"❌ Photo upload failed: {photo_result['error']}")
                 return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
             
         if video:
@@ -136,29 +135,25 @@ def send_alert():
             video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
             if video_result['success']:
                 video_url = video_result['url']
-                video_public_id = video_result['public_id']
                 app.logger.info(f"✅ Video uploaded successfully!")
-                app.logger.info(f"   URL: {video_url}")
-                app.logger.info(f"   Public ID: {video_public_id}")
             else:
-                app.logger.error(f"❌ Video upload failed: {video_result['error']}")
                 return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
-        # ✅ Save to database with Cloudinary URLs
+        # ✅ Save to database with new fields
         new_alert = Alert(
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
-            photo_filename=photo_url,  # Store Cloudinary URL
-            video_filename=video_url   # Store Cloudinary URL
+            photo_filename=photo_url,
+            video_filename=video_url,
+            barangay=barangay,  # ✅ New field
+            reporter_name=reporter_name  # ✅ New field
         )
         
         db.session.add(new_alert)
         db.session.commit()
 
         app.logger.info("✅ Fire Alert Saved to Database!")
-        app.logger.info(f"   Alert ID: {new_alert.id}")
-        app.logger.info(f"   Timestamp: {new_alert.timestamp}")
 
         return jsonify({
             'message': 'Fire alert received successfully',
@@ -190,8 +185,12 @@ def get_alerts():
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
+                'photo_filename': alert.photo_filename,  # Keep for compatibility
+                'video_filename': alert.video_filename,  # Keep for compatibility
                 'photo_url': alert.photo_filename,  # Cloudinary URL
                 'video_url': alert.video_filename,  # Cloudinary URL
+                'barangay': alert.barangay,  # ✅ New field
+                'reporter_name': alert.reporter_name,  # ✅ New field
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None
             })
         
@@ -206,7 +205,8 @@ def get_alerts():
         print("❌ Error fetching alerts:", str(e))
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
-
+    
+    
 # ✅ Delete alert endpoint (also deletes from Cloudinary)
 @app.route('/delete_alert/<int:alert_id>', methods=['DELETE', 'OPTIONS'])
 def delete_alert(alert_id):

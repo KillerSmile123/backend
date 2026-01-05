@@ -11,3 +11,7 @@ class Alert(db.Model):
     photo_filename = db.Column(db.String(255), nullable=True)
     video_filename = db.Column(db.String(255), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # ✅ New fields for reporter information (NO reporter photo)
+    barangay = db.Column(db.String(100), nullable=True)
+    reporter_name = db.Column(db.String(100), nullable=True)
