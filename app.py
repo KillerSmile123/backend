@@ -101,11 +101,11 @@ def send_alert():
         photo = request.files.get('photo')
         video = request.files.get('video')
 
-        print(f"📥 Received alert submission:")
-        print(f"  Description: {description}")
-        print(f"  Latitude: {latitude}, Longitude: {longitude}")
-        print(f"  Photo: {photo.filename if photo else 'None'}")
-        print(f"  Video: {video.filename if video else 'None'}")
+        app.logger.info(f"📥 Received alert submission:")
+        app.logger.info(f"  Description: {description}")
+        app.logger.info(f"  Latitude: {latitude}, Longitude: {longitude}")
+        app.logger.info(f"  Photo: {photo.filename if photo else 'None'}")
+        app.logger.info(f"  Video: {video.filename if video else 'None'}")
 
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
@@ -119,29 +119,29 @@ def send_alert():
         video_public_id = None
         
         if photo:
-            print(f"📤 Uploading photo to Cloudinary: {photo.filename}")
+            app.logger.info(f"📤 Uploading photo to Cloudinary: {photo.filename}")
             photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
             if photo_result['success']:
                 photo_url = photo_result['url']
                 photo_public_id = photo_result['public_id']
-                print(f"✅ Photo uploaded successfully!")
-                print(f"   URL: {photo_url}")
-                print(f"   Public ID: {photo_public_id}")
+                app.logger.info(f"✅ Photo uploaded successfully!")
+                app.logger.info(f"   URL: {photo_url}")
+                app.logger.info(f"   Public ID: {photo_public_id}")
             else:
-                print(f"❌ Photo upload failed: {photo_result['error']}")
+                app.logger.error(f"❌ Photo upload failed: {photo_result['error']}")
                 return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
             
         if video:
-            print(f"📤 Uploading video to Cloudinary: {video.filename}")
+            app.logger.info(f"📤 Uploading video to Cloudinary: {video.filename}")
             video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
             if video_result['success']:
                 video_url = video_result['url']
                 video_public_id = video_result['public_id']
-                print(f"✅ Video uploaded successfully!")
-                print(f"   URL: {video_url}")
-                print(f"   Public ID: {video_public_id}")
+                app.logger.info(f"✅ Video uploaded successfully!")
+                app.logger.info(f"   URL: {video_url}")
+                app.logger.info(f"   Public ID: {video_public_id}")
             else:
-                print(f"❌ Video upload failed: {video_result['error']}")
+                app.logger.error(f"❌ Video upload failed: {video_result['error']}")
                 return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
         # ✅ Save to database with Cloudinary URLs
@@ -156,9 +156,9 @@ def send_alert():
         db.session.add(new_alert)
         db.session.commit()
 
-        print("✅ Fire Alert Saved to Database!")
-        print(f"   Alert ID: {new_alert.id}")
-        print(f"   Timestamp: {new_alert.timestamp}")
+        app.logger.info("✅ Fire Alert Saved to Database!")
+        app.logger.info(f"   Alert ID: {new_alert.id}")
+        app.logger.info(f"   Timestamp: {new_alert.timestamp}")
 
         return jsonify({
             'message': 'Fire alert received successfully',
