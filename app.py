@@ -44,8 +44,17 @@ CORS(app, supports_credentials=True,
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
 
-# ✅ Initialize Cloudinary
-init_cloudinary()
+# ✅ Initialize Cloudinary and verify configuration
+try:
+    init_cloudinary()
+    print("✅ Cloudinary initialized successfully!")
+    print(f"Cloud Name: {os.getenv('CLOUDINARY_CLOUD_NAME')}")
+except Exception as e:
+    print(f"❌ Cloudinary initialization failed: {e}")
+    print("Please check your .env file has:")
+    print("  CLOUDINARY_CLOUD_NAME=your_cloud_name")
+    print("  CLOUDINARY_API_KEY=your_api_key")
+    print("  CLOUDINARY_API_SECRET=your_api_secret")
 
 # Uploads folder (keep for backward compatibility if needed)
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
@@ -92,31 +101,47 @@ def send_alert():
         photo = request.files.get('photo')
         video = request.files.get('video')
 
+        print(f"📥 Received alert submission:")
+        print(f"  Description: {description}")
+        print(f"  Latitude: {latitude}, Longitude: {longitude}")
+        print(f"  Photo: {photo.filename if photo else 'None'}")
+        print(f"  Video: {video.filename if video else 'None'}")
+
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
         if not photo and not video:
             return jsonify({'message': 'At least a photo or a video is required'}), 400
 
-        # ✅ Upload to Cloudinary instead of local storage
+        # ✅ Upload to Cloudinary
         photo_url = None
         photo_public_id = None
         video_url = None
         video_public_id = None
         
         if photo:
+            print(f"📤 Uploading photo to Cloudinary: {photo.filename}")
             photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
             if photo_result['success']:
                 photo_url = photo_result['url']
                 photo_public_id = photo_result['public_id']
+                print(f"✅ Photo uploaded successfully!")
+                print(f"   URL: {photo_url}")
+                print(f"   Public ID: {photo_public_id}")
             else:
+                print(f"❌ Photo upload failed: {photo_result['error']}")
                 return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
             
         if video:
+            print(f"📤 Uploading video to Cloudinary: {video.filename}")
             video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
             if video_result['success']:
                 video_url = video_result['url']
                 video_public_id = video_result['public_id']
+                print(f"✅ Video uploaded successfully!")
+                print(f"   URL: {video_url}")
+                print(f"   Public ID: {video_public_id}")
             else:
+                print(f"❌ Video upload failed: {video_result['error']}")
                 return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
         # ✅ Save to database with Cloudinary URLs
@@ -124,34 +149,32 @@ def send_alert():
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
-            photo_filename=photo_url,  # Store Cloudinary URL instead of filename
-            video_filename=video_url   # Store Cloudinary URL instead of filename
+            photo_filename=photo_url,  # Store Cloudinary URL
+            video_filename=video_url   # Store Cloudinary URL
         )
         
         db.session.add(new_alert)
         db.session.commit()
 
-        print("🔥 Fire Alert Saved to Database with Cloudinary!")
-        print(f"Alert ID: {new_alert.id}")
-        print("Description:", description)
-        print("Location:", latitude, longitude)
-        print("Photo URL:", photo_url if photo_url else 'None')
-        print("Video URL:", video_url if video_url else 'None')
+        print("✅ Fire Alert Saved to Database!")
+        print(f"   Alert ID: {new_alert.id}")
+        print(f"   Timestamp: {new_alert.timestamp}")
 
         return jsonify({
             'message': 'Fire alert received successfully',
             'alert_id': new_alert.id,
             'photo_url': photo_url,
-            'video_url': video_url
+            'video_url': video_url,
+            'timestamp': new_alert.timestamp.isoformat() if new_alert.timestamp else None
         }), 200
 
     except Exception as e:
-        print("❌ Error:", str(e))
+        print("❌ Error in send_alert:", str(e))
         traceback.print_exc()
         db.session.rollback()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-# ✅ Get all alerts (already returns URLs from database)
+# ✅ Get all alerts
 @app.route('/get_alerts', methods=['GET', 'OPTIONS'])
 def get_alerts():
     if request.method == 'OPTIONS':
@@ -167,10 +190,12 @@ def get_alerts():
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
-                'photo_url': alert.photo_filename,  # Now contains Cloudinary URL
-                'video_url': alert.video_filename,  # Now contains Cloudinary URL
+                'photo_url': alert.photo_filename,  # Cloudinary URL
+                'video_url': alert.video_filename,  # Cloudinary URL
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None
             })
+        
+        print(f"📋 Retrieved {len(alerts_list)} alerts")
         
         return jsonify({
             'alerts': alerts_list,
@@ -182,7 +207,7 @@ def get_alerts():
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-# ✅ OPTIONAL: Delete alert endpoint (also deletes from Cloudinary)
+# ✅ Delete alert endpoint (also deletes from Cloudinary)
 @app.route('/delete_alert/<int:alert_id>', methods=['DELETE', 'OPTIONS'])
 def delete_alert(alert_id):
     if request.method == 'OPTIONS':
@@ -193,27 +218,38 @@ def delete_alert(alert_id):
         if not alert:
             return jsonify({'message': 'Alert not found'}), 404
         
-        # Delete from Cloudinary if URLs exist
-        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
-            # Extract public_id from URL
-            # URL format: https://res.cloudinary.com/cloud_name/image/upload/v123456/fire_alerts/photos/abc123.jpg
-            parts = alert.photo_filename.split('/')
-            if 'fire_alerts' in parts:
-                idx = parts.index('fire_alerts')
-                public_id = '/'.join(parts[idx:]).split('.')[0]
-                delete_from_cloudinary(public_id, resource_type="image")
+        print(f"🗑️ Deleting alert {alert_id}")
         
+        # Delete photo from Cloudinary
+        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
+            try:
+                # Extract public_id from URL
+                parts = alert.photo_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    result = delete_from_cloudinary(public_id, resource_type="image")
+                    print(f"  Photo deletion: {result}")
+            except Exception as e:
+                print(f"  ⚠️ Photo deletion failed: {e}")
+        
+        # Delete video from Cloudinary
         if alert.video_filename and 'cloudinary.com' in alert.video_filename:
-            parts = alert.video_filename.split('/')
-            if 'fire_alerts' in parts:
-                idx = parts.index('fire_alerts')
-                public_id = '/'.join(parts[idx:]).split('.')[0]
-                delete_from_cloudinary(public_id, resource_type="video")
+            try:
+                parts = alert.video_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    result = delete_from_cloudinary(public_id, resource_type="video")
+                    print(f"  Video deletion: {result}")
+            except Exception as e:
+                print(f"  ⚠️ Video deletion failed: {e}")
         
         # Delete from database
         db.session.delete(alert)
         db.session.commit()
         
+        print(f"✅ Alert {alert_id} deleted successfully")
         return jsonify({'message': 'Alert deleted successfully'}), 200
         
     except Exception as e:
@@ -222,7 +258,7 @@ def delete_alert(alert_id):
         db.session.rollback()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-# Serve uploaded files (keep for backward compatibility with old data)
+# Serve uploaded files (backward compatibility)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     try:
@@ -245,23 +281,14 @@ def health():
         print("DB ERROR:", e)
         db_status = "disconnected"
 
+    cloudinary_status = "configured" if os.getenv('CLOUDINARY_CLOUD_NAME') else "not configured"
+
     return jsonify({
         "status": "healthy",
         "database": db_status,
+        "cloudinary": cloudinary_status,
         "cors": "enabled"
     })
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    ...
-
-@app.route("/api/register", methods=["POST"])
-def register():
-    ...
-
-@app.route("/api/alert", methods=["POST"])
-def create_alert():
-    ...
 
 # Error Handlers
 @app.errorhandler(404)
@@ -275,7 +302,10 @@ def internal_error(error):
 # Create Tables
 with app.app_context():
     db.create_all()
+    print("✅ Database tables created/verified")
 
 # Run App
 if __name__ == '__main__':
+    print("🚀 Starting Flask app...")
+    print(f"📍 Running on http://localhost:5000")
     app.run(port=5000, debug=True)
