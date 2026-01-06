@@ -31,10 +31,14 @@ def send_alert():
         barangay = request.form.get('barangay')
         reporter_name = request.form.get('reporter_name')
         
+        # ✅ NEW: Get user_id from form
+        user_id = request.form.get('user_id')
+        
         photo = request.files.get('photo')
         video = request.files.get('video')
 
         print(f"📥 Received alert submission:")
+        print(f"  User ID: {user_id}")  # ✅ NEW
         print(f"  Description: {description}")
         print(f"  Barangay: {barangay}")
         print(f"  Reporter: {reporter_name}")
@@ -71,8 +75,9 @@ def send_alert():
                 print(f"❌ Video upload failed: {video_result['error']}")
                 return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
-        # ✅ Save to database with Cloudinary URLs
+        # ✅ Save to database with Cloudinary URLs AND user_id
         new_alert = Alert(
+            user_id=int(user_id) if user_id else None,  # ✅ NEW: Save user_id
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
@@ -87,10 +92,12 @@ def send_alert():
 
         print("✅ Fire Alert Saved to Database!")
         print(f"   Alert ID: {new_alert.id}")
+        print(f"   User ID: {new_alert.user_id}")  # ✅ NEW
 
         return jsonify({
             'message': 'Fire alert received successfully',
             'alert_id': new_alert.id,
+            'user_id': new_alert.user_id,  # ✅ NEW
             'photo_url': photo_url,
             'video_url': video_url,
             'timestamp': new_alert.timestamp.isoformat() if new_alert.timestamp else None

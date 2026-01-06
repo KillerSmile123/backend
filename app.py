@@ -192,6 +192,8 @@ def get_resolved_alerts():
 # NEW ADMIN ACTION ENDPOINTS
 # ========================================
 
+# REPLACE the respond_alert function in app.py with this:
+
 @app.route('/respond_alert', methods=['POST', 'OPTIONS'])
 def respond_alert():
     """
@@ -213,6 +215,21 @@ def respond_alert():
         if not alert:
             return jsonify({'error': 'Alert not found'}), 404
         
+        # ✅ FIX: Check if alert has user_id
+        if not alert.user_id:
+            print(f"⚠️ Warning: Alert {alert_id} has no user_id - cannot send notification")
+            # Still update the alert, but don't create notification
+            alert.admin_response = message
+            alert.responded_at = datetime.utcnow()
+            alert.status = 'received'
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Response saved (no notification - alert has no user_id)',
+                'alert_id': alert_id
+            }), 200
+        
         # Update alert with admin response
         alert.admin_response = message
         alert.responded_at = datetime.utcnow()
@@ -220,10 +237,10 @@ def respond_alert():
         
         db.session.commit()
         
-        # Create notification for user
+        # ✅ FIX: Create notification with actual user_id
         notification_data = {
             'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': 'unknown',
+            'user_id': str(alert.user_id),  # ✅ Use actual user_id from alert
             'type': 'response',
             'title': 'Admin Response to Your Fire Alert',
             'message': message,
@@ -231,17 +248,21 @@ def respond_alert():
             'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
             'timestamp': datetime.utcnow().isoformat(),
             'read': False,
-            'resolve_time': None  # ✅ ADD THIS - it's required by the SQL INSERT
+            'resolve_time': None
         }
         
         # Save notification to database
         save_notification(notification_data)
         
         print(f"✅ Admin response saved for alert {alert_id}")
+        print(f"   Notified user ID: {alert.user_id}")
+        print(f"   Message: {message}")
         
         return jsonify({
             'success': True,
-            'message': 'Response sent successfully'
+            'message': 'Response sent successfully',
+            'user_id': alert.user_id,
+            'notification_created': True
         }), 200
         
     except Exception as e:
@@ -249,7 +270,6 @@ def respond_alert():
         traceback.print_exc()
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/resolve_alert_with_time', methods=['POST', 'OPTIONS'])
 def resolve_alert_with_time():

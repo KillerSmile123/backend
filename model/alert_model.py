@@ -5,6 +5,10 @@ class Alert(db.Model):
     __tablename__ = 'alerts'
 
     id = db.Column(db.Integer, primary_key=True)
+    
+    # ✅ ADD THIS LINE - Link alert to user
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
     description = db.Column(db.Text, nullable=True)
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
@@ -23,3 +27,6 @@ class Alert(db.Model):
     resolved_at = db.Column(db.DateTime, nullable=True)
     resolve_time = db.Column(db.String(50), nullable=True)
     status = db.Column(db.String(20), default='pending', nullable=True)
+    
+    # ✅ ADD THIS - Relationship to User
+    user = db.relationship('User', backref='alerts', lazy=True)
