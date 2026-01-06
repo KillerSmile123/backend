@@ -174,6 +174,10 @@ def send_alert():
 # REPLACE your existing /get_alerts endpoint with this:
 # ========================================
 
+# ========================================
+# REPLACE your existing /get_alerts endpoint with this:
+# ========================================
+
 @app.route('/get_alerts', methods=['GET', 'OPTIONS'])
 def get_alerts():
     if request.method == 'OPTIONS':
@@ -185,16 +189,17 @@ def get_alerts():
         
         alerts_list = []
         for alert in alerts:
+            # ✅ photo_filename and video_filename already contain full Cloudinary URLs
             alerts_list.append({
                 'id': alert.id,
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
                 'location': alert.barangay,  # Frontend expects 'location'
-                'photo_filename': alert.photo_filename,
-                'video_filename': alert.video_filename,
-                'photo_url': alert.photo_filename,
-                'video_url': alert.video_filename,
+                'photo_filename': alert.photo_filename,  # Full Cloudinary URL
+                'video_filename': alert.video_filename,  # Full Cloudinary URL
+                'photo_url': alert.photo_filename,  # Full Cloudinary URL
+                'video_url': alert.video_filename,  # Full Cloudinary URL
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
@@ -202,6 +207,7 @@ def get_alerts():
             })
         
         print(f"📋 Retrieved {len(alerts_list)} active alerts")
+        print(f"📸 Sample photo URL: {alerts_list[0]['photo_url'] if alerts_list and alerts_list[0]['photo_url'] else 'No photos'}")
         
         return jsonify({
             'alerts': alerts_list,
