@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_cors import CORS
 import os
 import traceback
+from datetime import datetime
 
 from sqlalchemy import text
 
@@ -88,15 +89,9 @@ def get_shortest_route():
 
     return jsonify(coords)
 
-# ✅ UPDATED Fire Alert Endpoint with Cloudinary
-
-# ✅ Get all alerts
-# ========================================
-# REPLACE your existing /get_alerts endpoint with this:
-# ========================================
 
 # ========================================
-# REPLACE your existing /get_alerts endpoint with this:
+# ALERTS ENDPOINTS
 # ========================================
 
 @app.route('/get_alerts', methods=['GET', 'OPTIONS'])
@@ -105,30 +100,32 @@ def get_alerts():
         return '', 204
         
     try:
-        # ✅ Only get unresolved alerts (active alerts)
+        # Only get unresolved alerts (active alerts)
         alerts = Alert.query.filter_by(resolved=False).order_by(Alert.timestamp.desc()).all()
         
         alerts_list = []
         for alert in alerts:
-            # ✅ photo_filename and video_filename already contain full Cloudinary URLs
             alerts_list.append({
                 'id': alert.id,
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
-                'location': alert.barangay,  # Frontend expects 'location'
-                'photo_filename': alert.photo_filename,  # Full Cloudinary URL
-                'video_filename': alert.video_filename,  # Full Cloudinary URL
-                'photo_url': alert.photo_filename,  # Full Cloudinary URL
-                'video_url': alert.video_filename,  # Full Cloudinary URL
+                'location': alert.barangay,
+                'photo_filename': alert.photo_filename,
+                'video_filename': alert.video_filename,
+                'photo_url': alert.photo_filename,
+                'video_url': alert.video_filename,
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': 'Pending'
+                'status': alert.status or 'pending',
+                'admin_response': alert.admin_response,
+                'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
+                'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'resolve_time': alert.resolve_time
             })
         
         print(f"📋 Retrieved {len(alerts_list)} active alerts")
-        print(f"📸 Sample photo URL: {alerts_list[0]['photo_url'] if alerts_list and alerts_list[0]['photo_url'] else 'No photos'}")
         
         return jsonify({
             'alerts': alerts_list,
@@ -140,10 +137,6 @@ def get_alerts():
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
-
-# ========================================
-# ADD these NEW endpoints after /get_alerts:
-# ========================================
 
 @app.route('/get_resolved_alerts', methods=['GET', 'OPTIONS'])
 def get_resolved_alerts():
@@ -167,6 +160,7 @@ def get_resolved_alerts():
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
                 'resolvedAt': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'resolve_time': alert.resolve_time,
                 'status': 'Resolved'
             })
         
@@ -186,6 +180,381 @@ def get_resolved_alerts():
         }), 200
 
 
+# ========================================
+# NEW ADMIN ACTION ENDPOINTS
+# ========================================
+
+@app.route('/respond_alert', methods=['POST', 'OPTIONS'])
+def respond_alert():
+    """
+    When admin responds to an alert, update the alert and create notification
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        data = request.json
+        alert_id = data.get('alert_id')
+        message = data.get('message')
+        
+        if not alert_id or not message:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Get alert from database
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # Update alert with admin response
+        alert.admin_response = message
+        alert.responded_at = datetime.utcnow()
+        alert.status = 'received'
+        
+        db.session.commit()
+        
+        # Create notification for user
+        notification_data = {
+            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
+            'user_id': alert.user_id if hasattr(alert, 'user_id') else 'unknown',
+            'type': 'response',
+            'title': 'Admin Response to Your Fire Alert',
+            'message': message,
+            'alert_id': str(alert_id),
+            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
+            'timestamp': datetime.utcnow().isoformat(),
+            'read': False
+        }
+        
+        # Save notification to database
+        save_notification(notification_data)
+        
+        print(f"✅ Admin response saved for alert {alert_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Response sent successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error responding to alert: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/resolve_alert_with_time', methods=['POST', 'OPTIONS'])
+def resolve_alert_with_time():
+    """
+    When admin resolves an alert with time, mark as resolved and notify user
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        data = request.json
+        alert_id = data.get('alert_id')
+        resolve_time = data.get('resolve_time')
+        
+        if not alert_id or not resolve_time:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Get alert from database
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # Update alert as resolved
+        alert.status = 'resolved'
+        alert.resolved = True
+        alert.resolved_at = datetime.utcnow()
+        alert.resolve_time = resolve_time
+        alert.resolved_by = 'Admin'
+        
+        db.session.commit()
+        
+        # Create notification
+        notification_data = {
+            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
+            'user_id': alert.user_id if hasattr(alert, 'user_id') else 'unknown',
+            'type': 'resolved',
+            'title': 'Fire Alert Resolved',
+            'message': f'Your fire alert at {alert.barangay or "your location"} has been resolved. Fire was extinguished at {resolve_time}.',
+            'alert_id': str(alert_id),
+            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
+            'resolve_time': resolve_time,
+            'timestamp': datetime.utcnow().isoformat(),
+            'read': False
+        }
+        
+        save_notification(notification_data)
+        
+        print(f"✅ Alert {alert_id} marked as resolved at {resolve_time}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Alert resolved successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error resolving alert: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/delete_alert/<alert_id>', methods=['DELETE', 'OPTIONS'])
+def delete_alert_new(alert_id):
+    """
+    When admin deletes an alert, remove it and notify user
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        # Get alert from database
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # Store user info before deleting
+        user_id = alert.user_id if hasattr(alert, 'user_id') else 'unknown'
+        location = alert.barangay or f"{alert.latitude}, {alert.longitude}"
+        
+        # Create notification before deleting
+        notification_data = {
+            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
+            'user_id': user_id,
+            'type': 'deleted',
+            'title': 'Alert Deleted',
+            'message': f'Your fire alert at {location} has been removed from the system.',
+            'alert_id': str(alert_id),
+            'timestamp': datetime.utcnow().isoformat(),
+            'read': False
+        }
+        
+        save_notification(notification_data)
+        
+        print(f"🗑️ Deleting alert {alert_id}")
+        
+        # Delete photo from Cloudinary
+        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
+            try:
+                parts = alert.photo_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    result = delete_from_cloudinary(public_id, resource_type="image")
+                    print(f"  Photo deletion: {result}")
+            except Exception as e:
+                print(f"  ⚠️ Photo deletion failed: {e}")
+        
+        # Delete video from Cloudinary
+        if alert.video_filename and 'cloudinary.com' in alert.video_filename:
+            try:
+                parts = alert.video_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    result = delete_from_cloudinary(public_id, resource_type="video")
+                    print(f"  Video deletion: {result}")
+            except Exception as e:
+                print(f"  ⚠️ Video deletion failed: {e}")
+        
+        # Delete from database
+        db.session.delete(alert)
+        db.session.commit()
+        
+        print(f"✅ Alert {alert_id} deleted successfully")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Alert deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error deleting alert: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# USER NOTIFICATION ENDPOINTS
+# ========================================
+
+@app.route('/get_user_notifications/<user_id>', methods=['GET', 'OPTIONS'])
+def get_user_notifications(user_id):
+    """
+    Get all notifications for a specific user
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        # Get notifications from database
+        notifications = get_notifications_by_user(user_id)
+        
+        return jsonify({
+            'success': True,
+            'notifications': notifications
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/mark_notification_read/<notification_id>', methods=['POST', 'OPTIONS'])
+def mark_notification_read(notification_id):
+    """
+    Mark a notification as read
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        mark_notification_as_read(notification_id)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Notification marked as read'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/get_user_alerts/<user_id>', methods=['GET', 'OPTIONS'])
+def get_user_alerts(user_id):
+    """
+    Get all alerts for a specific user with their current status
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        # Query alerts from database for specific user
+        # Note: You'll need to add user_id column to alerts table if not exists
+        alerts = Alert.query.order_by(Alert.timestamp.desc()).all()  # Modify with user filter when ready
+        
+        alert_list = [
+            {
+                'id': alert.id,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'description': alert.description,
+                'reporter_name': alert.reporter_name,
+                'barangay': alert.barangay,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'photo_url': alert.photo_filename,
+                'video_url': alert.video_filename,
+                'admin_response': alert.admin_response,
+                'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
+                'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'resolve_time': alert.resolve_time,
+                'status': alert.status or 'pending'
+            }
+            for alert in alerts
+        ]
+        
+        return jsonify({
+            'success': True,
+            'alerts': alert_list
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error getting user alerts: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# NOTIFICATION HELPER FUNCTIONS
+# ========================================
+
+def save_notification(notification_data):
+    """
+    Save notification to database
+    For now, using a simple JSON file approach. 
+    Replace with proper database model later.
+    """
+    try:
+        # TODO: Save to notifications table in database
+        # For now, we'll use execute to insert directly
+        with db.engine.connect() as conn:
+            query = text("""
+                INSERT INTO notifications 
+                (id, user_id, type, title, message, alert_id, alert_location, resolve_time, timestamp, `read`)
+                VALUES 
+                (:id, :user_id, :type, :title, :message, :alert_id, :alert_location, :resolve_time, :timestamp, :read)
+            """)
+            conn.execute(query, notification_data)
+            conn.commit()
+        print(f"✅ Notification saved: {notification_data['id']}")
+    except Exception as e:
+        print(f"❌ Error saving notification: {e}")
+        traceback.print_exc()
+
+
+def get_notifications_by_user(user_id):
+    """
+    Get all notifications for a user
+    """
+    try:
+        with db.engine.connect() as conn:
+            query = text("""
+                SELECT * FROM notifications 
+                WHERE user_id = :user_id 
+                ORDER BY timestamp DESC
+            """)
+            result = conn.execute(query, {'user_id': user_id})
+            
+            notifications = []
+            for row in result:
+                notifications.append({
+                    'id': row.id,
+                    'user_id': row.user_id,
+                    'type': row.type,
+                    'title': row.title,
+                    'message': row.message,
+                    'alertId': row.alert_id,
+                    'alertLocation': row.alert_location,
+                    'resolveTime': row.resolve_time,
+                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                    'read': bool(row.read)
+                })
+            
+            return notifications
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        return []
+
+
+def mark_notification_as_read(notification_id):
+    """
+    Mark a notification as read
+    """
+    try:
+        with db.engine.connect() as conn:
+            query = text("""
+                UPDATE notifications 
+                SET `read` = TRUE 
+                WHERE id = :notification_id
+            """)
+            conn.execute(query, {'notification_id': notification_id})
+            conn.commit()
+        print(f"✅ Notification {notification_id} marked as read")
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+
+
+# ========================================
+# EXISTING ENDPOINTS (Keep as is)
+# ========================================
+
 @app.route('/resolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
 def resolve_alert(alert_id):
     if request.method == 'OPTIONS':
@@ -196,7 +565,6 @@ def resolve_alert(alert_id):
         if not alert:
             return jsonify({'message': 'Alert not found'}), 404
         
-        from datetime import datetime
         alert.resolved = True
         alert.resolved_at = datetime.utcnow()
         
@@ -241,57 +609,7 @@ def unresolve_alert(alert_id):
         traceback.print_exc()
         db.session.rollback()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
-    
-# ✅ Delete alert endpoint (also deletes from Cloudinary)
-@app.route('/delete_alert/<int:alert_id>', methods=['DELETE', 'OPTIONS'])
-def delete_alert(alert_id):
-    if request.method == 'OPTIONS':
-        return '', 204
-        
-    try:
-        alert = Alert.query.get(alert_id)
-        if not alert:
-            return jsonify({'message': 'Alert not found'}), 404
-        
-        print(f"🗑️ Deleting alert {alert_id}")
-        
-        # Delete photo from Cloudinary
-        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
-            try:
-                # Extract public_id from URL
-                parts = alert.photo_filename.split('/')
-                if 'fire_alerts' in parts:
-                    idx = parts.index('fire_alerts')
-                    public_id = '/'.join(parts[idx:]).split('.')[0]
-                    result = delete_from_cloudinary(public_id, resource_type="image")
-                    print(f"  Photo deletion: {result}")
-            except Exception as e:
-                print(f"  ⚠️ Photo deletion failed: {e}")
-        
-        # Delete video from Cloudinary
-        if alert.video_filename and 'cloudinary.com' in alert.video_filename:
-            try:
-                parts = alert.video_filename.split('/')
-                if 'fire_alerts' in parts:
-                    idx = parts.index('fire_alerts')
-                    public_id = '/'.join(parts[idx:]).split('.')[0]
-                    result = delete_from_cloudinary(public_id, resource_type="video")
-                    print(f"  Video deletion: {result}")
-            except Exception as e:
-                print(f"  ⚠️ Video deletion failed: {e}")
-        
-        # Delete from database
-        db.session.delete(alert)
-        db.session.commit()
-        
-        print(f"✅ Alert {alert_id} deleted successfully")
-        return jsonify({'message': 'Alert deleted successfully'}), 200
-        
-    except Exception as e:
-        print("❌ Error deleting alert:", str(e))
-        traceback.print_exc()
-        db.session.rollback()
-        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+
 
 # Serve uploaded files (backward compatibility)
 @app.route('/uploads/<filename>')
@@ -416,69 +734,69 @@ def safe_migrate():
         }), 500
 
 
-    @app.route('/admin/migration-tool')
-    def migration_tool():
-        """Simple UI to run the migration"""
-        return '''<!DOCTYPE html>
-    <html><head><title>FireTrackr - Database Migration</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-    .container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
-    h1{color:#333;margin-bottom:10px;font-size:28px}
-    .subtitle{color:#666;margin-bottom:30px;font-size:16px}
-    .info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
-    .success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-    .error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-    button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
-    button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
-    button:disabled{background:#ccc;cursor:not-allowed}
-    .details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
-    </style></head><body>
-    <div class="container">
-    <h1>🔧 Database Migration Tool</h1>
-    <p class="subtitle">FireTrackr Capstone Project</p>
-    <div class="info"><strong>📋 What this does:</strong><br>
-    Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
-    <div class="success" id="success"></div>
-    <div class="error" id="error"></div>
-    <button id="btn" onclick="run()">🚀 Run Migration</button>
-    </div>
-    <script>
-    async function run(){
-    const btn=document.getElementById('btn');
-    const success=document.getElementById('success');
-    const error=document.getElementById('error');
-    success.style.display='none';
-    error.style.display='none';
-    btn.disabled=true;
-    btn.textContent='⏳ Running...';
-    try{
-    const r=await fetch('/admin/safe-migrate',{method:'POST'});
-    const d=await r.json();
-    if(d.success){
-    success.style.display='block';
-    if(d.already_done){
-    success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
-    btn.textContent='✅ Already Done';
-    }else{
-    success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
-    btn.textContent='✅ Complete';
-    }
-    }else{throw new Error(d.error)}
-    }catch(e){
-    error.style.display='block';
-    error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
-    btn.textContent='❌ Try Again';
-    btn.disabled=false;
-    }
-    }
-    </script></body></html>'''
+@app.route('/admin/migration-tool')
+def migration_tool():
+    """Simple UI to run the migration"""
+    return '''<!DOCTYPE html>
+<html><head><title>FireTrackr - Database Migration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
+h1{color:#333;margin-bottom:10px;font-size:28px}
+.subtitle{color:#666;margin-bottom:30px;font-size:16px}
+.info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
+.success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+.error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
+button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
+button:disabled{background:#ccc;cursor:not-allowed}
+.details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
+</style></head><body>
+<div class="container">
+<h1>🔧 Database Migration Tool</h1>
+<p class="subtitle">FireTrackr Capstone Project</p>
+<div class="info"><strong>📋 What this does:</strong><br>
+Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
+<div class="success" id="success"></div>
+<div class="error" id="error"></div>
+<button id="btn" onclick="run()">🚀 Run Migration</button>
+</div>
+<script>
+async function run(){
+const btn=document.getElementById('btn');
+const success=document.getElementById('success');
+const error=document.getElementById('error');
+success.style.display='none';
+error.style.display='none';
+btn.disabled=true;
+btn.textContent='⏳ Running...';
+try{
+const r=await fetch('/admin/safe-migrate',{method:'POST'});
+const d=await r.json();
+if(d.success){
+success.style.display='block';
+if(d.already_done){
+success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
+btn.textContent='✅ Already Done';
+}else{
+success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
+btn.textContent='✅ Complete';
+}
+}else{throw new Error(d.error)}
+}catch(e){
+error.style.display='block';
+error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
+btn.textContent='❌ Try Again';
+btn.disabled=false;
+}
+}
+</script></body></html>'''
 
-    @app.route('/admin/debug-alerts')
-    def debug_alerts():
-        """Debug what's in the database"""
+@app.route('/admin/debug-alerts')
+def debug_alerts():
+    """Debug what's in the database"""
     try:
         all_alerts = Alert.query.order_by(Alert.timestamp.desc()).limit(5).all()
         
