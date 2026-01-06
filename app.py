@@ -218,14 +218,15 @@ def respond_alert():
         # Create notification for user
         notification_data = {
             'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': 'unknown',  # ✅ Changed from alert.user_id
+            'user_id': 'unknown',
             'type': 'response',
             'title': 'Admin Response to Your Fire Alert',
             'message': message,
             'alert_id': str(alert_id),
             'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
             'timestamp': datetime.utcnow().isoformat(),
-            'read': False
+            'read': False,
+            'resolve_time': None  # ✅ ADD THIS - it's required by the SQL INSERT
         }
         
         # Save notification to database
@@ -333,7 +334,8 @@ def delete_alert_new(alert_id):
             'message': f'Your fire alert at {location} has been removed from the system.',
             'alert_id': str(alert_id),
             'timestamp': datetime.utcnow().isoformat(),
-            'read': False
+            'read': False,
+            'resolve_time': None  # ✅ ADD THIS - it's required by the SQL INSERT
         }
         
         save_notification(notification_data)
@@ -486,6 +488,9 @@ def save_notification(notification_data):
     Replace with proper database model later.
     """
     try:
+        # ✅ Ensure all required fields exist with default None
+        notification_data.setdefault('resolve_time', None)
+        
         # TODO: Save to notifications table in database
         # For now, we'll use execute to insert directly
         with db.engine.connect() as conn:
@@ -501,7 +506,6 @@ def save_notification(notification_data):
     except Exception as e:
         print(f"❌ Error saving notification: {e}")
         traceback.print_exc()
-
 
 def get_notifications_by_user(user_id):
     """
