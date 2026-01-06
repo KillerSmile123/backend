@@ -10,6 +10,9 @@ from dijkstra import dijkstra
 from graph_data import road_graph
 
 # Import your database setup
+from model.user import User
+from model.alert_model import Alert
+from model.notification_model import Notification  
 from database import init_db, db
 from route.register_route import register_bp
 from route.alert_route import alert_bp
