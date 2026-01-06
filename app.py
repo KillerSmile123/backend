@@ -118,11 +118,14 @@ def get_alerts():
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': alert.status or 'pending',
-                'admin_response': alert.admin_response,
-                'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
+                # ✅ FIXED: Use resolved status instead of alert.status
+                'status': 'resolved' if alert.resolved else 'pending',
+                # ✅ Keep these if they exist, remove if they don't
+                # 'admin_response': alert.admin_response,
+                # 'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
-                'resolve_time': alert.resolve_time
+                # ✅ REMOVED: resolve_time doesn't exist in your model
+                # 'resolve_time': alert.resolve_time
             })
         
         print(f"📋 Retrieved {len(alerts_list)} active alerts")
@@ -736,63 +739,63 @@ def safe_migrate():
 
 @app.route('/admin/migration-tool')
 def migration_tool():
-    """Simple UI to run the migration"""
-    return '''<!DOCTYPE html>
-<html><head><title>FireTrackr - Database Migration</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
-h1{color:#333;margin-bottom:10px;font-size:28px}
-.subtitle{color:#666;margin-bottom:30px;font-size:16px}
-.info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
-.success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-.error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
-button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
-button:disabled{background:#ccc;cursor:not-allowed}
-.details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
-</style></head><body>
-<div class="container">
-<h1>🔧 Database Migration Tool</h1>
-<p class="subtitle">FireTrackr Capstone Project</p>
-<div class="info"><strong>📋 What this does:</strong><br>
-Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
-<div class="success" id="success"></div>
-<div class="error" id="error"></div>
-<button id="btn" onclick="run()">🚀 Run Migration</button>
-</div>
-<script>
-async function run(){
-const btn=document.getElementById('btn');
-const success=document.getElementById('success');
-const error=document.getElementById('error');
-success.style.display='none';
-error.style.display='none';
-btn.disabled=true;
-btn.textContent='⏳ Running...';
-try{
-const r=await fetch('/admin/safe-migrate',{method:'POST'});
-const d=await r.json();
-if(d.success){
-success.style.display='block';
-if(d.already_done){
-success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
-btn.textContent='✅ Already Done';
-}else{
-success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
-btn.textContent='✅ Complete';
-}
-}else{throw new Error(d.error)}
-}catch(e){
-error.style.display='block';
-error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
-btn.textContent='❌ Try Again';
-btn.disabled=false;
-}
-}
-</script></body></html>'''
+            """Simple UI to run the migration"""
+            return '''<!DOCTYPE html>
+        <html><head><title>FireTrackr - Database Migration</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+        .container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
+        h1{color:#333;margin-bottom:10px;font-size:28px}
+        .subtitle{color:#666;margin-bottom:30px;font-size:16px}
+        .info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
+        .success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+        .error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+        button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
+        button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
+        button:disabled{background:#ccc;cursor:not-allowed}
+        .details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
+        </style></head><body>
+        <div class="container">
+        <h1>🔧 Database Migration Tool</h1>
+        <p class="subtitle">FireTrackr Capstone Project</p>
+        <div class="info"><strong>📋 What this does:</strong><br>
+        Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
+        <div class="success" id="success"></div>
+        <div class="error" id="error"></div>
+        <button id="btn" onclick="run()">🚀 Run Migration</button>
+        </div>
+        <script>
+        async function run(){
+        const btn=document.getElementById('btn');
+        const success=document.getElementById('success');
+        const error=document.getElementById('error');
+        success.style.display='none';
+        error.style.display='none';
+        btn.disabled=true;
+        btn.textContent='⏳ Running...';
+        try{
+        const r=await fetch('/admin/safe-migrate',{method:'POST'});
+        const d=await r.json();
+        if(d.success){
+        success.style.display='block';
+        if(d.already_done){
+        success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
+        btn.textContent='✅ Already Done';
+        }else{
+        success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
+        btn.textContent='✅ Complete';
+        }
+        }else{throw new Error(d.error)}
+        }catch(e){
+        error.style.display='block';
+        error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
+        btn.textContent='❌ Try Again';
+        btn.disabled=false;
+        }
+        }
+        </script></body></html>'''
 
 @app.route('/admin/debug-alerts')
 def debug_alerts():
