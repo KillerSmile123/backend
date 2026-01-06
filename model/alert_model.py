@@ -8,8 +8,8 @@ class Alert(db.Model):
     description = db.Column(db.Text, nullable=True)
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
-    photo_filename = db.Column(db.String(255), nullable=True)
-    video_filename = db.Column(db.String(255), nullable=True)
+    photo_filename = db.Column(db.String(500), nullable=True)
+    video_filename = db.Column(db.String(500), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     
     # ✅ Reporter information fields

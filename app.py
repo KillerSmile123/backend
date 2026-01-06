@@ -404,6 +404,98 @@ def health():
         "cors": "enabled"
     })
 
+
+    @app.route('/admin/safe-migrate', methods=['POST'])
+    def safe_migrate():
+        """
+    Safe migration to increase photo/video column sizes
+    This is NON-DESTRUCTIVE and won't delete any data
+    """
+    try:
+        from sqlalchemy import inspect
+        
+        print("🔍 Checking current database schema...")
+        
+        inspector = inspect(db.engine)
+        columns = inspector.get_columns('alerts')
+        
+        photo_col = next((c for c in columns if c['name'] == 'photo_filename'), None)
+        video_col = next((c for c in columns if c['name'] == 'video_filename'), None)
+        
+        if not photo_col or not video_col:
+            return jsonify({
+                'success': False,
+                'error': 'Columns not found in database'
+            }), 400
+        
+        current_photo_size = photo_col['type'].length if hasattr(photo_col['type'], 'length') else 'unknown'
+        current_video_size = video_col['type'].length if hasattr(video_col['type'], 'length') else 'unknown'
+        
+        print(f"📊 Current sizes - Photo: {current_photo_size}, Video: {current_video_size}")
+        
+        # Check if already migrated
+        if current_photo_size >= 500 and current_video_size >= 500:
+            return jsonify({
+                'success': True,
+                'message': '✅ Columns already migrated!',
+                'photo_size': current_photo_size,
+                'video_size': current_video_size,
+                'already_done': True
+            }), 200
+        
+        # Perform migration
+        print("🔄 Starting migration...")
+        
+        with db.engine.connect() as conn:
+            db_type = db.engine.dialect.name
+            print(f"💾 Database type: {db_type}")
+            
+            if db_type == 'mysql':
+                print("  Executing MySQL ALTER commands...")
+                conn.execute(text("ALTER TABLE alerts MODIFY COLUMN photo_filename VARCHAR(500)"))
+                conn.execute(text("ALTER TABLE alerts MODIFY COLUMN video_filename VARCHAR(500)"))
+            elif db_type == 'postgresql':
+                print("  Executing PostgreSQL ALTER commands...")
+                conn.execute(text("ALTER TABLE alerts ALTER COLUMN photo_filename TYPE VARCHAR(500)"))
+                conn.execute(text("ALTER TABLE alerts ALTER COLUMN video_filename TYPE VARCHAR(500)"))
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Unsupported database type: {db_type}'
+                }), 400
+            
+            conn.commit()
+        
+        print("✅ Migration completed successfully!")
+        
+        # Verify migration
+        inspector = inspect(db.engine)
+        columns = inspector.get_columns('alerts')
+        photo_col = next((c for c in columns if c['name'] == 'photo_filename'), None)
+        video_col = next((c for c in columns if c['name'] == 'video_filename'), None)
+        
+        new_photo_size = photo_col['type'].length if hasattr(photo_col['type'], 'length') else 500
+        new_video_size = video_col['type'].length if hasattr(video_col['type'], 'length') else 500
+        
+        return jsonify({
+            'success': True,
+            'message': '✅ Migration completed successfully!',
+            'old_photo_size': current_photo_size,
+            'old_video_size': current_video_size,
+            'new_photo_size': new_photo_size,
+            'new_video_size': new_video_size,
+            'database_type': db_type
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Migration error: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
 # Error Handlers
 @app.errorhandler(404)
 def not_found(error):
