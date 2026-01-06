@@ -89,85 +89,6 @@ def get_shortest_route():
     return jsonify(coords)
 
 # ✅ UPDATED Fire Alert Endpoint with Cloudinary
-@app.route('/send_alert', methods=['POST', 'OPTIONS'])
-def send_alert():
-    if request.method == 'OPTIONS':
-        return '', 204
-        
-    try:
-        description = request.form.get('description')
-        latitude = request.form.get('latitude')
-        longitude = request.form.get('longitude')
-        
-        # ✅ Get new fields (barangay and reporter name)
-        barangay = request.form.get('barangay')
-        reporter_name = request.form.get('reporter_name')
-        
-        photo = request.files.get('photo')
-        video = request.files.get('video')
-
-        app.logger.info(f"📥 Received alert submission:")
-        app.logger.info(f"  Description: {description}")
-        app.logger.info(f"  Barangay: {barangay}")
-        app.logger.info(f"  Reporter: {reporter_name}")
-        app.logger.info(f"  Latitude: {latitude}, Longitude: {longitude}")
-
-        if not latitude or not longitude:
-            return jsonify({'message': 'Location is required'}), 400
-        if not photo and not video:
-            return jsonify({'message': 'At least a photo or a video is required'}), 400
-
-        # ✅ Upload to Cloudinary
-        photo_url = None
-        video_url = None
-        
-        if photo:
-            app.logger.info(f"📤 Uploading photo to Cloudinary: {photo.filename}")
-            photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
-            if photo_result['success']:
-                photo_url = photo_result['url']
-                app.logger.info(f"✅ Photo uploaded successfully!")
-            else:
-                return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
-            
-        if video:
-            app.logger.info(f"📤 Uploading video to Cloudinary: {video.filename}")
-            video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
-            if video_result['success']:
-                video_url = video_result['url']
-                app.logger.info(f"✅ Video uploaded successfully!")
-            else:
-                return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
-
-        # ✅ Save to database with new fields
-        new_alert = Alert(
-            description=description,
-            latitude=float(latitude),
-            longitude=float(longitude),
-            photo_filename=photo_url,
-            video_filename=video_url,
-            barangay=barangay,  # ✅ New field
-            reporter_name=reporter_name  # ✅ New field
-        )
-        
-        db.session.add(new_alert)
-        db.session.commit()
-
-        app.logger.info("✅ Fire Alert Saved to Database!")
-
-        return jsonify({
-            'message': 'Fire alert received successfully',
-            'alert_id': new_alert.id,
-            'photo_url': photo_url,
-            'video_url': video_url,
-            'timestamp': new_alert.timestamp.isoformat() if new_alert.timestamp else None
-        }), 200
-
-    except Exception as e:
-        print("❌ Error in send_alert:", str(e))
-        traceback.print_exc()
-        db.session.rollback()
-        return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
 # ✅ Get all alerts
 # ========================================
@@ -495,65 +416,91 @@ def safe_migrate():
         }), 500
 
 
-@app.route('/admin/migration-tool')
-def migration_tool():
-    """Simple UI to run the migration"""
-    return '''<!DOCTYPE html>
-<html><head><title>FireTrackr - Database Migration</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
-h1{color:#333;margin-bottom:10px;font-size:28px}
-.subtitle{color:#666;margin-bottom:30px;font-size:16px}
-.info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
-.success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-.error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
-button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
-button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
-button:disabled{background:#ccc;cursor:not-allowed}
-.details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
-</style></head><body>
-<div class="container">
-<h1>🔧 Database Migration Tool</h1>
-<p class="subtitle">FireTrackr Capstone Project</p>
-<div class="info"><strong>📋 What this does:</strong><br>
-Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
-<div class="success" id="success"></div>
-<div class="error" id="error"></div>
-<button id="btn" onclick="run()">🚀 Run Migration</button>
-</div>
-<script>
-async function run(){
-const btn=document.getElementById('btn');
-const success=document.getElementById('success');
-const error=document.getElementById('error');
-success.style.display='none';
-error.style.display='none';
-btn.disabled=true;
-btn.textContent='⏳ Running...';
-try{
-const r=await fetch('/admin/safe-migrate',{method:'POST'});
-const d=await r.json();
-if(d.success){
-success.style.display='block';
-if(d.already_done){
-success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
-btn.textContent='✅ Already Done';
-}else{
-success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
-btn.textContent='✅ Complete';
-}
-}else{throw new Error(d.error)}
-}catch(e){
-error.style.display='block';
-error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
-btn.textContent='❌ Try Again';
-btn.disabled=false;
-}
-}
-</script></body></html>'''
+    @app.route('/admin/migration-tool')
+    def migration_tool():
+        """Simple UI to run the migration"""
+        return '''<!DOCTYPE html>
+    <html><head><title>FireTrackr - Database Migration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
+    h1{color:#333;margin-bottom:10px;font-size:28px}
+    .subtitle{color:#666;margin-bottom:30px;font-size:16px}
+    .info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
+    .success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+    .error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+    button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
+    button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
+    button:disabled{background:#ccc;cursor:not-allowed}
+    .details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
+    </style></head><body>
+    <div class="container">
+    <h1>🔧 Database Migration Tool</h1>
+    <p class="subtitle">FireTrackr Capstone Project</p>
+    <div class="info"><strong>📋 What this does:</strong><br>
+    Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
+    <div class="success" id="success"></div>
+    <div class="error" id="error"></div>
+    <button id="btn" onclick="run()">🚀 Run Migration</button>
+    </div>
+    <script>
+    async function run(){
+    const btn=document.getElementById('btn');
+    const success=document.getElementById('success');
+    const error=document.getElementById('error');
+    success.style.display='none';
+    error.style.display='none';
+    btn.disabled=true;
+    btn.textContent='⏳ Running...';
+    try{
+    const r=await fetch('/admin/safe-migrate',{method:'POST'});
+    const d=await r.json();
+    if(d.success){
+    success.style.display='block';
+    if(d.already_done){
+    success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
+    btn.textContent='✅ Already Done';
+    }else{
+    success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
+    btn.textContent='✅ Complete';
+    }
+    }else{throw new Error(d.error)}
+    }catch(e){
+    error.style.display='block';
+    error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
+    btn.textContent='❌ Try Again';
+    btn.disabled=false;
+    }
+    }
+    </script></body></html>'''
+
+    @app.route('/admin/debug-alerts')
+    def debug_alerts():
+        """Debug what's in the database"""
+    try:
+        all_alerts = Alert.query.order_by(Alert.timestamp.desc()).limit(5).all()
+        
+        result = []
+        for alert in all_alerts:
+            result.append({
+                'id': alert.id,
+                'timestamp': str(alert.timestamp),
+                'photo_filename': alert.photo_filename,
+                'is_cloudinary': 'cloudinary.com' in (alert.photo_filename or ''),
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'resolved': alert.resolved
+            })
+        
+        return jsonify({
+            'total_alerts': Alert.query.count(),
+            'recent_5': result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # Error Handlers
