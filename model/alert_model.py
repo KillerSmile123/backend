@@ -12,6 +12,10 @@ class Alert(db.Model):
     video_filename = db.Column(db.String(255), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # ✅ New fields for reporter information (NO reporter photo)
+    # ✅ Reporter information fields
     barangay = db.Column(db.String(100), nullable=True)
     reporter_name = db.Column(db.String(100), nullable=True)
+    
+    # ✅ NEW: Resolved status fields
+    resolved = db.Column(db.Boolean, default=False, nullable=False)
+    resolved_at = db.Column(db.DateTime, nullable=True)
