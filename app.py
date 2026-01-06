@@ -218,7 +218,7 @@ def respond_alert():
         # Create notification for user
         notification_data = {
             'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': alert.user_id if hasattr(alert, 'user_id') else 'unknown',
+            'user_id': 'unknown',  # ✅ Changed from alert.user_id
             'type': 'response',
             'title': 'Admin Response to Your Fire Alert',
             'message': message,
@@ -271,14 +271,15 @@ def resolve_alert_with_time():
         alert.resolved = True
         alert.resolved_at = datetime.utcnow()
         alert.resolve_time = resolve_time
-        alert.resolved_by = 'Admin'
+        # ❌ REMOVE THIS LINE:
+        # alert.resolved_by = 'Admin'
         
         db.session.commit()
         
         # Create notification
         notification_data = {
             'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': alert.user_id if hasattr(alert, 'user_id') else 'unknown',
+            'user_id': 'unknown',  # Changed from alert.user_id
             'type': 'resolved',
             'title': 'Fire Alert Resolved',
             'message': f'Your fire alert at {alert.barangay or "your location"} has been resolved. Fire was extinguished at {resolve_time}.',
@@ -326,7 +327,7 @@ def delete_alert_new(alert_id):
         # Create notification before deleting
         notification_data = {
             'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': user_id,
+            'user_id': 'unknown',
             'type': 'deleted',
             'title': 'Alert Deleted',
             'message': f'Your fire alert at {location} has been removed from the system.',

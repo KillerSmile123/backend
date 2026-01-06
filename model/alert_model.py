@@ -12,16 +12,14 @@ class Alert(db.Model):
     video_filename = db.Column(db.String(500), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     
-    barangay = db.Column(db.String(100), nullable=True)
-    reporter_name = db.Column(db.String(100), nullable=True)
+    # ✅ Reporter information fields
+    barangay = db.Column(db.String(255), nullable=True)
+    reporter_name = db.Column(db.String(255), nullable=True)
     
+    # ✅ Status and resolution fields
     resolved = db.Column(db.Boolean, default=False, nullable=False)
-    resolved_at = db.Column(db.DateTime, nullable=True)
-    
-    # ✅ ADD THESE FIELDS:
-    status = db.Column(db.String(50), default='pending', nullable=True)
     admin_response = db.Column(db.Text, nullable=True)
     responded_at = db.Column(db.DateTime, nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
     resolve_time = db.Column(db.String(50), nullable=True)
-    resolved_by = db.Column(db.String(100), nullable=True)
-    user_id = db.Column(db.String(100), nullable=True)
+    status = db.Column(db.String(20), default='pending', nullable=True)
