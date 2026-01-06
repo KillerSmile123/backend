@@ -832,6 +832,55 @@ def debug_alerts():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+# POST - Admin creates notification
+@app.route('/api/admin/notifications', methods=['POST'])
+def create_notification():
+    data = request.json
+    user_id = data.get('user_id')
+    message = data.get('message')
+    type = data.get('type', 'info')
+    
+    # Create notification in database
+    notification = Notification(
+        user_id=user_id,
+        message=message,
+        type=type,
+        is_read=False
+    )
+    db.session.add(notification)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'notification': notification.to_dict()
+    }), 201
+
+# GET - User gets their notifications
+@app.route('/api/user/notifications/<int:user_id>', methods=['GET'])
+def get_user_notifications(user_id):
+    notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
+    return jsonify([n.to_dict() for n in notifications])
+
+# PATCH - Mark notification as read
+@app.route('/api/notifications/<int:notification_id>/read', methods=['PATCH'])
+def mark_as_read(notification_id):
+    notification = Notification.query.get(notification_id)
+    if notification:
+        notification.is_read = True
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'error': 'Notification not found'}), 404
+
+# DELETE - Delete notification
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+def delete_notification(notification_id):
+    notification = Notification.query.get(notification_id)
+    if notification:
+        db.session.delete(notification)
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'error': 'Notification not found'}), 404
 
 
 # Error Handlers
