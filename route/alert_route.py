@@ -1,7 +1,11 @@
-from flask import request, Blueprint, send_file
+from flask import request, Blueprint, send_file, jsonify
 from database import db
 from model.alert_model import Alert
 import os
+import traceback
+
+# ✅ Import Cloudinary functions
+from cloudinary_config import upload_to_cloudinary, delete_from_cloudinary
 
 alert_bp = Blueprint('alert', __name__)
 
@@ -11,41 +15,92 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 # --------------------------
-# SEND ALERT
+# SEND ALERT (WITH CLOUDINARY)
 # --------------------------
-@alert_bp.route('/send_alert', methods=['POST'])
+@alert_bp.route('/send_alert', methods=['POST', 'OPTIONS'])
 def send_alert():
-    description = request.form.get('description')
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
-        latitude = float(request.form.get('latitude') or 0.0)
-        longitude = float(request.form.get('longitude') or 0.0)
-    except ValueError:
-        return {"error": "Invalid or missing location coordinates."}, 400
+        description = request.form.get('description')
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        
+        # Get barangay and reporter name
+        barangay = request.form.get('barangay')
+        reporter_name = request.form.get('reporter_name')
+        
+        photo = request.files.get('photo')
+        video = request.files.get('video')
 
-    photo = request.files.get('photo')
-    video = request.files.get('video')
+        print(f"📥 Received alert submission:")
+        print(f"  Description: {description}")
+        print(f"  Barangay: {barangay}")
+        print(f"  Reporter: {reporter_name}")
+        print(f"  Latitude: {latitude}, Longitude: {longitude}")
 
-    photo_filename = None
-    video_filename = None
+        if not latitude or not longitude:
+            return jsonify({'message': 'Location is required'}), 400
+        if not photo and not video:
+            return jsonify({'message': 'At least a photo or a video is required'}), 400
 
-    if photo:
-        photo_filename = photo.filename
-        photo.save(os.path.join(UPLOAD_FOLDER, photo_filename))
-    if video:
-        video_filename = video.filename
-        video.save(os.path.join(UPLOAD_FOLDER, video_filename))
+        # ✅ Upload to Cloudinary
+        photo_url = None
+        video_url = None
+        
+        if photo:
+            print(f"📤 Uploading photo to Cloudinary: {photo.filename}")
+            photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
+            if photo_result['success']:
+                photo_url = photo_result['url']
+                print(f"✅ Photo uploaded successfully!")
+                print(f"   URL: {photo_url}")
+            else:
+                print(f"❌ Photo upload failed: {photo_result['error']}")
+                return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
+            
+        if video:
+            print(f"📤 Uploading video to Cloudinary: {video.filename}")
+            video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
+            if video_result['success']:
+                video_url = video_result['url']
+                print(f"✅ Video uploaded successfully!")
+                print(f"   URL: {video_url}")
+            else:
+                print(f"❌ Video upload failed: {video_result['error']}")
+                return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
 
-    alert = Alert(
-        description=description,
-        latitude=latitude,
-        longitude=longitude,
-        photo_filename=photo_filename,
-        video_filename=video_filename
-    )
+        # ✅ Save to database with Cloudinary URLs
+        new_alert = Alert(
+            description=description,
+            latitude=float(latitude),
+            longitude=float(longitude),
+            photo_filename=photo_url,  # Full Cloudinary URL
+            video_filename=video_url,  # Full Cloudinary URL
+            barangay=barangay,
+            reporter_name=reporter_name
+        )
+        
+        db.session.add(new_alert)
+        db.session.commit()
 
-    db.session.add(alert)
-    db.session.commit()
-    return {"message": "Alert sent successfully!"}, 200
+        print("✅ Fire Alert Saved to Database!")
+        print(f"   Alert ID: {new_alert.id}")
+
+        return jsonify({
+            'message': 'Fire alert received successfully',
+            'alert_id': new_alert.id,
+            'photo_url': photo_url,
+            'video_url': video_url,
+            'timestamp': new_alert.timestamp.isoformat() if new_alert.timestamp else None
+        }), 200
+
+    except Exception as e:
+        print("❌ Error in send_alert:", str(e))
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
 
 # --------------------------
