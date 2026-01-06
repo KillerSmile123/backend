@@ -856,11 +856,6 @@ def create_notification():
         'notification': notification.to_dict()
     }), 201
 
-# GET - User gets their notifications
-@app.route('/api/user/notifications/<int:user_id>', methods=['GET'])
-def get_user_notifications(user_id):
-    notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
-    return jsonify([n.to_dict() for n in notifications])
 
 # PATCH - Mark notification as read
 @app.route('/api/notifications/<int:notification_id>/read', methods=['PATCH'])
