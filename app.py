@@ -170,6 +170,10 @@ def send_alert():
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
 # ✅ Get all alerts
+# ========================================
+# REPLACE your existing /get_alerts endpoint with this:
+# ========================================
+
 @app.route('/get_alerts', methods=['GET', 'OPTIONS'])
 def get_alerts():
     if request.method == 'OPTIONS':
@@ -186,7 +190,7 @@ def get_alerts():
                 'description': alert.description,
                 'latitude': alert.latitude,
                 'longitude': alert.longitude,
-                'location': alert.barangay,  # ✅ Frontend expects 'location'
+                'location': alert.barangay,  # Frontend expects 'location'
                 'photo_filename': alert.photo_filename,
                 'video_filename': alert.video_filename,
                 'photo_url': alert.photo_filename,
@@ -194,7 +198,7 @@ def get_alerts():
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': 'Pending'  # ✅ Add status for frontend
+                'status': 'Pending'
             })
         
         print(f"📋 Retrieved {len(alerts_list)} active alerts")
@@ -208,113 +212,108 @@ def get_alerts():
         print("❌ Error fetching alerts:", str(e))
         traceback.print_exc()
         return jsonify({'message': 'Server error', 'error': str(e)}), 500
-    
-
-    # ✅ Get resolved alerts (matches frontend expectation)
-    @app.route('/get_resolved_alerts', methods=['GET', 'OPTIONS'])
-    def get_resolved_alerts():
-        if request.method == 'OPTIONS':
-            return '', 204
-            
-        try:
-            # Query alerts that have a resolved status
-            # Note: You need to add 'resolved' column to your Alert model first
-            resolved_alerts = Alert.query.filter_by(resolved=True).order_by(Alert.timestamp.desc()).all()
-            
-            alerts_list = []
-            for alert in resolved_alerts:
-                alerts_list.append({
-                    'id': alert.id,
-                    'description': alert.description,
-                    'latitude': alert.latitude,
-                    'longitude': alert.longitude,
-                    'location': alert.barangay,  # ✅ Frontend expects 'location'
-                    'photo_url': alert.photo_filename,
-                    'video_url': alert.video_filename,
-                    'barangay': alert.barangay,
-                    'reporter_name': alert.reporter_name,
-                    'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                    'resolvedAt': alert.resolved_at.isoformat() if hasattr(alert, 'resolved_at') and alert.resolved_at else None,
-                    'status': 'Resolved'
-                })
-            
-            print(f"📋 Retrieved {len(alerts_list)} resolved alerts")
-            
-            return jsonify({
-                'resolved': alerts_list,  # ✅ Frontend expects 'resolved' key
-                'count': len(alerts_list)
-            }), 200
-            
-        except Exception as e:
-            print("❌ Error fetching resolved alerts:", str(e))
-            traceback.print_exc()
-            # Return empty array instead of error to match frontend fallback
-            return jsonify({
-                'resolved': [],
-                'count': 0
-            }), 200
 
 
-    # ✅ Mark alert as resolved
-    @app.route('/resolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
-    def resolve_alert(alert_id):
-        if request.method == 'OPTIONS':
-            return '', 204
-            
-        try:
-            alert = Alert.query.get(alert_id)
-            if not alert:
-                return jsonify({'message': 'Alert not found'}), 404
-            
-            # Mark as resolved
-            from datetime import datetime
-            alert.resolved = True
-            alert.resolved_at = datetime.utcnow()
-            
-            db.session.commit()
-            
-            print(f"✅ Alert {alert_id} marked as resolved")
-            return jsonify({
-                'message': 'Alert marked as resolved',
-                'alert_id': alert_id
-            }), 200
-            
-        except Exception as e:
-            print("❌ Error resolving alert:", str(e))
-            traceback.print_exc()
-            db.session.rollback()
-            return jsonify({'message': 'Server error', 'error': str(e)}), 500
+# ========================================
+# ADD these NEW endpoints after /get_alerts:
+# ========================================
 
-
-    # ✅ Unresolve alert (move back to active)
-    @app.route('/unresolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
-    def unresolve_alert(alert_id):
-        if request.method == 'OPTIONS':
-            return '', 204
-            
-        try:
-            alert = Alert.query.get(alert_id)
-            if not alert:
-                return jsonify({'message': 'Alert not found'}), 404
-            
-            # Mark as unresolved
-            alert.resolved = False
-            alert.resolved_at = None
-            
-            db.session.commit()
-            
-            print(f"✅ Alert {alert_id} marked as unresolved")
-            return jsonify({
-                'message': 'Alert marked as unresolved',
-                'alert_id': alert_id
-            }), 200
-            
-        except Exception as e:
-            print("❌ Error unresolving alert:", str(e))
-            traceback.print_exc()
-            db.session.rollback()
-            return jsonify({'message': 'Server error', 'error': str(e)}), 500
+@app.route('/get_resolved_alerts', methods=['GET', 'OPTIONS'])
+def get_resolved_alerts():
+    if request.method == 'OPTIONS':
+        return '', 204
         
+    try:
+        resolved_alerts = Alert.query.filter_by(resolved=True).order_by(Alert.timestamp.desc()).all()
+        
+        alerts_list = []
+        for alert in resolved_alerts:
+            alerts_list.append({
+                'id': alert.id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'location': alert.barangay,
+                'photo_url': alert.photo_filename,
+                'video_url': alert.video_filename,
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'resolvedAt': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'status': 'Resolved'
+            })
+        
+        print(f"📋 Retrieved {len(alerts_list)} resolved alerts")
+        
+        return jsonify({
+            'resolved': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print("❌ Error fetching resolved alerts:", str(e))
+        traceback.print_exc()
+        return jsonify({
+            'resolved': [],
+            'count': 0
+        }), 200
+
+
+@app.route('/resolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
+def resolve_alert(alert_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'message': 'Alert not found'}), 404
+        
+        from datetime import datetime
+        alert.resolved = True
+        alert.resolved_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        print(f"✅ Alert {alert_id} marked as resolved")
+        return jsonify({
+            'message': 'Alert marked as resolved',
+            'alert_id': alert_id
+        }), 200
+        
+    except Exception as e:
+        print("❌ Error resolving alert:", str(e))
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+
+
+@app.route('/unresolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
+def unresolve_alert(alert_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'message': 'Alert not found'}), 404
+        
+        alert.resolved = False
+        alert.resolved_at = None
+        
+        db.session.commit()
+        
+        print(f"✅ Alert {alert_id} marked as unresolved")
+        return jsonify({
+            'message': 'Alert marked as unresolved',
+            'alert_id': alert_id
+        }), 200
+        
+    except Exception as e:
+        print("❌ Error unresolving alert:", str(e))
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
     
 # ✅ Delete alert endpoint (also deletes from Cloudinary)
 @app.route('/delete_alert/<int:alert_id>', methods=['DELETE', 'OPTIONS'])
