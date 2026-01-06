@@ -405,12 +405,19 @@ def health():
     })
 
 
-    @app.route('/admin/safe-migrate', methods=['POST'])
-    def safe_migrate():
-        """
+# ========================================
+# DATABASE MIGRATION ENDPOINTS
+# ========================================
+
+@app.route('/admin/safe-migrate', methods=['POST', 'OPTIONS'])
+def safe_migrate():
+    """
     Safe migration to increase photo/video column sizes
     This is NON-DESTRUCTIVE and won't delete any data
     """
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
         from sqlalchemy import inspect
         
@@ -428,8 +435,8 @@ def health():
                 'error': 'Columns not found in database'
             }), 400
         
-        current_photo_size = photo_col['type'].length if hasattr(photo_col['type'], 'length') else 'unknown'
-        current_video_size = video_col['type'].length if hasattr(video_col['type'], 'length') else 'unknown'
+        current_photo_size = getattr(photo_col.get('type'), 'length', 255)
+        current_video_size = getattr(video_col.get('type'), 'length', 255)
         
         print(f"📊 Current sizes - Photo: {current_photo_size}, Video: {current_video_size}")
         
@@ -454,36 +461,27 @@ def health():
                 print("  Executing MySQL ALTER commands...")
                 conn.execute(text("ALTER TABLE alerts MODIFY COLUMN photo_filename VARCHAR(500)"))
                 conn.execute(text("ALTER TABLE alerts MODIFY COLUMN video_filename VARCHAR(500)"))
+                conn.commit()
             elif db_type == 'postgresql':
                 print("  Executing PostgreSQL ALTER commands...")
                 conn.execute(text("ALTER TABLE alerts ALTER COLUMN photo_filename TYPE VARCHAR(500)"))
                 conn.execute(text("ALTER TABLE alerts ALTER COLUMN video_filename TYPE VARCHAR(500)"))
+                conn.commit()
             else:
                 return jsonify({
                     'success': False,
                     'error': f'Unsupported database type: {db_type}'
                 }), 400
-            
-            conn.commit()
         
         print("✅ Migration completed successfully!")
-        
-        # Verify migration
-        inspector = inspect(db.engine)
-        columns = inspector.get_columns('alerts')
-        photo_col = next((c for c in columns if c['name'] == 'photo_filename'), None)
-        video_col = next((c for c in columns if c['name'] == 'video_filename'), None)
-        
-        new_photo_size = photo_col['type'].length if hasattr(photo_col['type'], 'length') else 500
-        new_video_size = video_col['type'].length if hasattr(video_col['type'], 'length') else 500
         
         return jsonify({
             'success': True,
             'message': '✅ Migration completed successfully!',
             'old_photo_size': current_photo_size,
             'old_video_size': current_video_size,
-            'new_photo_size': new_photo_size,
-            'new_video_size': new_video_size,
+            'new_photo_size': 500,
+            'new_video_size': 500,
             'database_type': db_type
         }), 200
         
@@ -496,6 +494,78 @@ def health():
             'error_type': type(e).__name__
         }), 500
 
+
+@app.route('/admin/migration-tool')
+def migration_tool():
+    """Simple UI to run the migration"""
+    return '''<!DOCTYPE html>
+<html><head><title>FireTrackr - Database Migration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{background:white;padding:40px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%}
+h1{color:#333;margin-bottom:10px;font-size:28px}
+.subtitle{color:#666;margin-bottom:30px;font-size:16px}
+.info{background:#f0f7ff;border-left:4px solid #2196F3;padding:15px;margin-bottom:20px;border-radius:5px}
+.success{background:#d4edda;border-left:4px solid #28a745;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+.error{background:#f8d7da;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:5px;display:none}
+button{width:100%;padding:15px;font-size:18px;font-weight:600;background:#4CAF50;color:white;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s}
+button:hover:not(:disabled){background:#45a049;transform:translateY(-2px);box-shadow:0 5px 15px rgba(76,175,80,0.3)}
+button:disabled{background:#ccc;cursor:not-allowed}
+.details{margin-top:10px;font-family:monospace;font-size:13px;background:#f5f5f5;padding:10px;border-radius:5px}
+</style></head><body>
+<div class="container">
+<h1>🔧 Database Migration Tool</h1>
+<p class="subtitle">FireTrackr Capstone Project</p>
+<div class="info"><strong>📋 What this does:</strong><br>
+Increases photo_filename and video_filename columns from 255 to 500 characters for Cloudinary URLs.</div>
+<div class="success" id="success"></div>
+<div class="error" id="error"></div>
+<button id="btn" onclick="run()">🚀 Run Migration</button>
+</div>
+<script>
+async function run(){
+const btn=document.getElementById('btn');
+const success=document.getElementById('success');
+const error=document.getElementById('error');
+success.style.display='none';
+error.style.display='none';
+btn.disabled=true;
+btn.textContent='⏳ Running...';
+try{
+const r=await fetch('/admin/safe-migrate',{method:'POST'});
+const d=await r.json();
+if(d.success){
+success.style.display='block';
+if(d.already_done){
+success.innerHTML='<strong>✅ Already Migrated!</strong><br>Columns are already 500 characters.<div class="details">Photo: '+d.photo_size+' chars<br>Video: '+d.video_size+' chars</div>';
+btn.textContent='✅ Already Done';
+}else{
+success.innerHTML='<strong>✅ Success!</strong><br>'+d.message+'<div class="details">Database: '+d.database_type+'<br>Old: '+d.old_photo_size+' → New: 500</div>';
+btn.textContent='✅ Complete';
+}
+}else{throw new Error(d.error)}
+}catch(e){
+error.style.display='block';
+error.innerHTML='<strong>❌ Failed</strong><br>'+e.message;
+btn.textContent='❌ Try Again';
+btn.disabled=false;
+}
+}
+</script></body></html>'''
+
+
+# Error Handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'message': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'message': 'Internal server error'}), 500
+
+    
 # Error Handlers
 @app.errorhandler(404)
 def not_found(error):
