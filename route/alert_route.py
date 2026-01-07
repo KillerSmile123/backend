@@ -1,3 +1,4 @@
+# alert_route.py
 from flask import request, Blueprint, send_file, jsonify
 from database import db
 from model.alert_model import Alert
