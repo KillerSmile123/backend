@@ -1,3 +1,4 @@
+#app.py
 from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_cors import CORS
 import os
@@ -34,17 +35,11 @@ load_dotenv()
 app = Flask(__name__)
 
 # CORS config
-CORS(app, supports_credentials=True,
-     resources={r"/*": {
-         "origins": [
-             "https://sunog-user.onrender.com", 
-             "https://sunog-admin.onrender.com",
-             "http://localhost:3000",
-             "http://localhost:5000"
-         ],
-         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-         "allow_headers": ["Content-Type", "Authorization"]
-     }})
+CORS(
+    app,
+    supports_credentials=True,
+    resources={r"/*": {"origins": "*"}}
+)
 
 # Secret key
 app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
