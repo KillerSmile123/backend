@@ -1,3 +1,5 @@
+#app.py
+
 from flask import Flask, jsonify, request, render_template, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import os
@@ -143,18 +145,24 @@ def sse_notifications(user_id):
                     
         except GeneratorExit:
             print(f"📡 SSE connection closed for user {user_id}")
+        except Exception as e:
+            print(f"❌ SSE error for user {user_id}: {e}")
         finally:
             remove_sse_connection(user_id, queue)
     
-    return Response(
+    response = Response(
         stream_with_context(event_stream()),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no',
-            'Connection': 'keep-alive'
-        }
+        mimetype='text/event-stream'
     )
+    
+    # CORS headers for SSE
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    response.headers['Connection'] = 'keep-alive'
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    return response
 
 
 # ========================================
