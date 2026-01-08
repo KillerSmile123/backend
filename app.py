@@ -41,7 +41,20 @@ app = Flask(__name__)
 CORS(
     app,
     supports_credentials=True,
-    resources={r"/*": {"origins": "*"}}
+    resources={
+        r"/*": {
+            "origins": [
+                "https://sunog-user.onrender.com",
+                "https://sunog-admin.onrender.com",
+                "http://localhost:*",  # For development
+                "http://127.0.0.1:*"   # For development
+            ],
+            "allow_headers": ["Content-Type", "Accept"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            "expose_headers": ["Content-Type"],
+            "max_age": 3600
+        }
+    }
 )
 
 # Secret key
@@ -119,6 +132,8 @@ def send_sse_notification(user_id, notification_data):
                 except ValueError:
                     pass
 
+# app.py - FIXED SSE Endpoint
+
 @app.route('/sse/notifications/<user_id>')
 def sse_notifications(user_id):
     """
@@ -155,12 +170,14 @@ def sse_notifications(user_id):
         mimetype='text/event-stream'
     )
     
-    # CORS headers for SSE
+    # ✅ FIXED: Use specific origin instead of wildcard
+    origin = request.headers.get('Origin', 'https://sunog-user.onrender.com')
+    
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['X-Accel-Buffering'] = 'no'
     response.headers['Connection'] = 'keep-alive'
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Origin'] = origin  # ✅ Specific origin
+    response.headers['Access-Control-Allow-Credentials'] = 'true'  # ✅ Allow credentials
     
     return response
 
