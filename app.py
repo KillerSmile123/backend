@@ -801,6 +801,11 @@ def create_notification():
         'notification': notification.to_dict()
     }), 201
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
 
 # PATCH - Mark notification as read
 @app.route('/api/notifications/<int:notification_id>/read', methods=['PATCH'])
