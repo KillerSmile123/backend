@@ -624,7 +624,15 @@ def get_user_alerts(user_id):
         return '', 204
         
     try:
-        alerts = Alert.query.order_by(Alert.timestamp.desc()).all()
+        # 🔥 FIXED: Filter alerts by user_id
+        alerts = Alert.query.filter_by(user_id=user_id).order_by(Alert.timestamp.desc()).all()
+        
+        if not alerts:
+            return jsonify({
+                'success': True,
+                'alerts': [],
+                'message': 'No alerts found for this user'
+            }), 200
         
         alert_list = [
             {
@@ -646,6 +654,8 @@ def get_user_alerts(user_id):
             for alert in alerts
         ]
         
+        print(f"✅ Retrieved {len(alert_list)} alerts for user {user_id}")
+        
         return jsonify({
             'success': True,
             'alerts': alert_list
@@ -655,7 +665,6 @@ def get_user_alerts(user_id):
         print(f"❌ Error getting user alerts: {e}")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 # ========================================
 # EXISTING ENDPOINTS
