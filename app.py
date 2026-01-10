@@ -58,7 +58,8 @@ CORS(
 )
 
 # Secret key
-app.config['SECRET_KEY'] = '88e8c79a3e05967c39b69b6d9ae86f04d418a4f59fa84c4eadf6506e56f34672'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+
 
 # Initialize Cloudinary
 try:
@@ -872,6 +873,11 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({'message': 'Internal server error'}), 500
+
+# Add to app.py
+@app.route('/keep-alive')
+def keep_alive():
+    return jsonify({"status": "awake", "timestamp": datetime.utcnow().isoformat()})
 
 # Create Tables
 with app.app_context():
