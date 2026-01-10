@@ -124,6 +124,7 @@ def clear_alerts(user_id):
 
 
 # --------------------------
+
 # DOWNLOAD FIRE CONTACTS PDF
 # --------------------------
 @alert_bp.route('/api/fire/contacts/pdf', methods=['GET'])
