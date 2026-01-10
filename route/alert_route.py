@@ -1,11 +1,12 @@
-# alert_route.py
+# alert_route.py - UNIFIED MEDIA UPLOAD (Images + Videos in One Field)
 from flask import request, Blueprint, send_file, jsonify
 from database import db
 from model.alert_model import Alert
 import os
 import traceback
+import json
+from datetime import datetime
 
-# ✅ Import Cloudinary functions
 from cloudinary_config import upload_to_cloudinary, delete_from_cloudinary
 
 alert_bp = Blueprint('alert', __name__)
@@ -16,7 +17,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 # --------------------------
-# SEND ALERT (WITH CLOUDINARY)
+# SEND ALERT (UNIFIED MEDIA)
 # --------------------------
 @alert_bp.route('/send_alert', methods=['POST', 'OPTIONS'])
 def send_alert():
@@ -27,65 +28,105 @@ def send_alert():
         description = request.form.get('description')
         latitude = request.form.get('latitude')
         longitude = request.form.get('longitude')
-        
-        # Get barangay and reporter name
         barangay = request.form.get('barangay')
         reporter_name = request.form.get('reporter_name')
-        
-        # ✅ NEW: Get user_id from form
         user_id = request.form.get('user_id')
         
-        photo = request.files.get('photo')
-        video = request.files.get('video')
+        # ✅ Get both photos and videos from the unified upload
+        photos = request.files.getlist('photos')
+        videos = request.files.getlist('videos')
 
         print(f"📥 Received alert submission:")
-        print(f"  User ID: {user_id}")  # ✅ NEW
+        print(f"  User ID: {user_id}")
         print(f"  Description: {description}")
         print(f"  Barangay: {barangay}")
         print(f"  Reporter: {reporter_name}")
         print(f"  Latitude: {latitude}, Longitude: {longitude}")
+        print(f"  Photos received: {len(photos)}")
+        print(f"  Videos received: {len(videos)}")
 
+        # Validation
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
-        if not photo and not video:
-            return jsonify({'message': 'At least a photo or a video is required'}), 400
+        if not photos and not videos:
+            return jsonify({'message': 'At least one photo or video is required'}), 400
+        if not user_id:
+            print("⚠️ Warning: No user_id provided!")
 
-        # ✅ Upload to Cloudinary
-        photo_url = None
-        video_url = None
+        # ✅ Upload all photos to Cloudinary
+        photo_urls = []
+        for i, photo in enumerate(photos):
+            if photo and photo.filename:
+                try:
+                    print(f"📤 Uploading photo {i+1}/{len(photos)}: {photo.filename}")
+                    photo_result = upload_to_cloudinary(
+                        photo, 
+                        folder="fire_alerts/photos", 
+                        resource_type="image"
+                    )
+                    
+                    if photo_result['success']:
+                        photo_url = photo_result['url']
+                        photo_urls.append(photo_url)
+                        print(f"✅ Photo {i+1} uploaded: {photo_url}")
+                    else:
+                        print(f"❌ Photo {i+1} upload failed: {photo_result['error']}")
+                        
+                except Exception as e:
+                    print(f"❌ Error uploading photo {i+1}: {e}")
+                    traceback.print_exc()
         
-        if photo:
-            print(f"📤 Uploading photo to Cloudinary: {photo.filename}")
-            photo_result = upload_to_cloudinary(photo, folder="fire_alerts/photos", resource_type="image")
-            if photo_result['success']:
-                photo_url = photo_result['url']
-                print(f"✅ Photo uploaded successfully!")
-                print(f"   URL: {photo_url}")
-            else:
-                print(f"❌ Photo upload failed: {photo_result['error']}")
-                return jsonify({'message': 'Photo upload failed', 'error': photo_result['error']}), 500
-            
-        if video:
-            print(f"📤 Uploading video to Cloudinary: {video.filename}")
-            video_result = upload_to_cloudinary(video, folder="fire_alerts/videos", resource_type="video")
-            if video_result['success']:
-                video_url = video_result['url']
-                print(f"✅ Video uploaded successfully!")
-                print(f"   URL: {video_url}")
-            else:
-                print(f"❌ Video upload failed: {video_result['error']}")
-                return jsonify({'message': 'Video upload failed', 'error': video_result['error']}), 500
+        # ✅ Upload all videos to Cloudinary
+        video_urls = []
+        for i, video in enumerate(videos):
+            if video and video.filename:
+                try:
+                    print(f"📤 Uploading video {i+1}/{len(videos)}: {video.filename}")
+                    video_result = upload_to_cloudinary(
+                        video, 
+                        folder="fire_alerts/videos", 
+                        resource_type="video"
+                    )
+                    
+                    if video_result['success']:
+                        video_url = video_result['url']
+                        video_urls.append(video_url)
+                        print(f"✅ Video {i+1} uploaded: {video_url}")
+                    else:
+                        print(f"❌ Video {i+1} upload failed: {video_result['error']}")
+                        
+                except Exception as e:
+                    print(f"❌ Error uploading video {i+1}: {e}")
+                    traceback.print_exc()
 
-        # ✅ Save to database with Cloudinary URLs AND user_id
+        # Check if at least one media was uploaded successfully
+        if not photo_urls and not video_urls:
+            return jsonify({
+                'message': 'Failed to upload media files',
+                'error': 'All uploads failed'
+            }), 500
+
+        # ✅ Store URLs as JSON arrays
+        photo_urls_json = json.dumps(photo_urls) if photo_urls else None
+        video_urls_json = json.dumps(video_urls) if video_urls else None
+        
+        print(f"💾 Saving to database:")
+        print(f"  Photo URLs: {photo_urls_json}")
+        print(f"  Video URLs: {video_urls_json}")
+
+        # ✅ Save to database
         new_alert = Alert(
-            user_id=int(user_id) if user_id else None,  # ✅ NEW: Save user_id
+            user_id=int(user_id) if user_id else None,
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
-            photo_filename=photo_url,  # Full Cloudinary URL
-            video_filename=video_url,  # Full Cloudinary URL
+            photo_filename=photo_urls_json,  # JSON array of photo URLs
+            video_filename=video_urls_json,  # JSON array of video URLs
             barangay=barangay,
-            reporter_name=reporter_name
+            reporter_name=reporter_name,
+            timestamp=datetime.utcnow(),
+            status='pending',
+            resolved=False
         )
         
         db.session.add(new_alert)
@@ -93,38 +134,287 @@ def send_alert():
 
         print("✅ Fire Alert Saved to Database!")
         print(f"   Alert ID: {new_alert.id}")
-        print(f"   User ID: {new_alert.user_id}")  # ✅ NEW
+        print(f"   User ID: {new_alert.user_id}")
+        print(f"   Photos: {len(photo_urls)}, Videos: {len(video_urls)}")
 
         return jsonify({
+            'success': True,
             'message': 'Fire alert received successfully',
             'alert_id': new_alert.id,
-            'user_id': new_alert.user_id,  # ✅ NEW
-            'photo_url': photo_url,
-            'video_url': video_url,
-            'timestamp': new_alert.timestamp.isoformat() if new_alert.timestamp else None
+            'user_id': new_alert.user_id,
+            'photo_urls': photo_urls,
+            'photo_count': len(photo_urls),
+            'video_urls': video_urls,
+            'video_count': len(video_urls),
+            'timestamp': new_alert.timestamp.isoformat()
         }), 200
 
     except Exception as e:
         print("❌ Error in send_alert:", str(e))
         traceback.print_exc()
         db.session.rollback()
-        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'message': 'Server error',
+            'error': str(e)
+        }), 500
 
 
 # --------------------------
-# CLEAR ALERT HISTORY
+# GET ALERTS (PARSE MEDIA URLS)
+# --------------------------
+@alert_bp.route('/get_alerts', methods=['GET'])
+def get_alerts():
+    """Return all active alerts with parsed media URLs"""
+    try:
+        alerts = Alert.query.filter_by(resolved=False).order_by(Alert.timestamp.desc()).all()
+        
+        alerts_list = []
+        for alert in alerts:
+            # ✅ Parse photo URLs
+            photo_urls = []
+            if alert.photo_filename:
+                try:
+                    photo_urls = json.loads(alert.photo_filename)
+                    if not isinstance(photo_urls, list):
+                        photo_urls = [alert.photo_filename]
+                except (json.JSONDecodeError, TypeError):
+                    photo_urls = [alert.photo_filename]
+            
+            # ✅ Parse video URLs
+            video_urls = []
+            if alert.video_filename:
+                try:
+                    video_urls = json.loads(alert.video_filename)
+                    if not isinstance(video_urls, list):
+                        video_urls = [alert.video_filename]
+                except (json.JSONDecodeError, TypeError):
+                    video_urls = [alert.video_filename]
+            
+            alerts_list.append({
+                'id': alert.id,
+                'user_id': alert.user_id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'photo_urls': photo_urls,  # Array of photo URLs
+                'video_urls': video_urls,  # Array of video URLs
+                'photo_url': photo_urls[0] if photo_urls else None,  # Backwards compatibility
+                'video_url': video_urls[0] if video_urls else None,  # Backwards compatibility
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'status': alert.status or 'pending',
+                'resolved': alert.resolved,
+                'admin_response': alert.admin_response,
+                'responded_at': alert.responded_at.isoformat() if alert.responded_at else None
+            })
+        
+        print(f"📋 Retrieved {len(alerts_list)} active alerts")
+        return jsonify({
+            'success': True,
+            'alerts': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error fetching alerts: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# GET USER'S ALERTS
+# --------------------------
+@alert_bp.route('/get_user_alerts/<user_id>', methods=['GET'])
+def get_user_alerts(user_id):
+    """Get all alerts for a specific user with parsed media URLs"""
+    try:
+        alerts = Alert.query.filter_by(user_id=user_id).order_by(Alert.timestamp.desc()).all()
+        
+        alerts_list = []
+        for alert in alerts:
+            # Parse photo URLs
+            photo_urls = []
+            if alert.photo_filename:
+                try:
+                    photo_urls = json.loads(alert.photo_filename)
+                    if not isinstance(photo_urls, list):
+                        photo_urls = [alert.photo_filename]
+                except (json.JSONDecodeError, TypeError):
+                    photo_urls = [alert.photo_filename]
+            
+            # Parse video URLs
+            video_urls = []
+            if alert.video_filename:
+                try:
+                    video_urls = json.loads(alert.video_filename)
+                    if not isinstance(video_urls, list):
+                        video_urls = [alert.video_filename]
+                except (json.JSONDecodeError, TypeError):
+                    video_urls = [alert.video_filename]
+            
+            alerts_list.append({
+                'id': alert.id,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'description': alert.description,
+                'reporter_name': alert.reporter_name,
+                'barangay': alert.barangay,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'photo_urls': photo_urls,
+                'video_urls': video_urls,
+                'photo_url': photo_urls[0] if photo_urls else None,
+                'video_url': video_urls[0] if video_urls else None,
+                'admin_response': alert.admin_response,
+                'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
+                'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'resolve_time': alert.resolve_time,
+                'status': alert.status or 'pending',
+                'resolved': alert.resolved
+            })
+        
+        print(f"✅ Retrieved {len(alerts_list)} alerts for user {user_id}")
+        return jsonify({
+            'success': True,
+            'alerts': alerts_list
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error getting user alerts: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# DELETE ALERT WITH CLOUDINARY CLEANUP
+# --------------------------
+@alert_bp.route('/delete_alert/<alert_id>', methods=['DELETE'])
+def delete_alert(alert_id):
+    """Delete alert and its media from Cloudinary"""
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # Delete photos from Cloudinary
+        if alert.photo_filename:
+            try:
+                photo_urls = json.loads(alert.photo_filename)
+                if isinstance(photo_urls, list):
+                    for photo_url in photo_urls:
+                        if 'cloudinary.com' in photo_url:
+                            parts = photo_url.split('/')
+                            if 'fire_alerts' in parts:
+                                idx = parts.index('fire_alerts')
+                                public_id = '/'.join(parts[idx:]).split('.')[0]
+                                delete_from_cloudinary(public_id, resource_type="image")
+                                print(f"🗑️ Deleted photo: {public_id}")
+            except:
+                pass
+        
+        # Delete videos from Cloudinary
+        if alert.video_filename:
+            try:
+                video_urls = json.loads(alert.video_filename)
+                if isinstance(video_urls, list):
+                    for video_url in video_urls:
+                        if 'cloudinary.com' in video_url:
+                            parts = video_url.split('/')
+                            if 'fire_alerts' in parts:
+                                idx = parts.index('fire_alerts')
+                                public_id = '/'.join(parts[idx:]).split('.')[0]
+                                delete_from_cloudinary(public_id, resource_type="video")
+                                print(f"🗑️ Deleted video: {public_id}")
+            except:
+                pass
+        
+        db.session.delete(alert)
+        db.session.commit()
+        
+        print(f"✅ Alert {alert_id} deleted")
+        return jsonify({
+            'success': True,
+            'message': 'Alert deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error deleting alert: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# CLEAR USER ALERTS
 # --------------------------
 @alert_bp.route('/api/alerts/user/<int:user_id>', methods=['DELETE'])
 def clear_alerts(user_id):
-    alerts = Alert.query.filter_by(user_id=user_id).all()
-    for alert in alerts:
-        db.session.delete(alert)
-    db.session.commit()
-    return {"message": "Alert history cleared"}
+    """Delete all alerts for a user"""
+    try:
+        alerts = Alert.query.filter_by(user_id=user_id).all()
+        
+        for alert in alerts:
+            # Delete photos
+            if alert.photo_filename:
+                try:
+                    photo_urls = json.loads(alert.photo_filename)
+                    if isinstance(photo_urls, list):
+                        for photo_url in photo_urls:
+                            if 'cloudinary.com' in photo_url:
+                                parts = photo_url.split('/')
+                                if 'fire_alerts' in parts:
+                                    idx = parts.index('fire_alerts')
+                                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                                    delete_from_cloudinary(public_id, resource_type="image")
+                except:
+                    pass
+            
+            # Delete videos
+            if alert.video_filename:
+                try:
+                    video_urls = json.loads(alert.video_filename)
+                    if isinstance(video_urls, list):
+                        for video_url in video_urls:
+                            if 'cloudinary.com' in video_url:
+                                parts = video_url.split('/')
+                                if 'fire_alerts' in parts:
+                                    idx = parts.index('fire_alerts')
+                                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                                    delete_from_cloudinary(public_id, resource_type="video")
+                except:
+                    pass
+            
+            db.session.delete(alert)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Deleted {len(alerts)} alerts',
+            'count': len(alerts)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error clearing alerts: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 # --------------------------
-
 # DOWNLOAD FIRE CONTACTS PDF
 # --------------------------
 @alert_bp.route('/api/fire/contacts/pdf', methods=['GET'])
