@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request, render_template, send_from_directory,
 from flask_cors import CORS
 import os
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import time
 from queue import Queue
@@ -34,6 +34,22 @@ from dotenv import load_dotenv
 from cloudinary_config import init_cloudinary, upload_to_cloudinary, delete_from_cloudinary
 
 load_dotenv()
+
+# Philippine timezone is UTC+8
+PHILIPPINE_OFFSET = timedelta(hours=8)
+PHILIPPINE_TZ = timezone(PHILIPPINE_OFFSET)
+
+def get_philippine_time():
+    """Get current time in Philippine timezone (UTC+8)"""
+    return datetime.now(PHILIPPINE_TZ)
+
+def get_philippine_time_iso():
+    """Get current time in Philippine timezone as ISO string"""
+    return get_philippine_time().isoformat()
+
+def get_philippine_timestamp():
+    """Get current timestamp in Philippine timezone"""
+    return int(get_philippine_time().timestamp())
 
 app = Flask(__name__)
 
@@ -396,9 +412,6 @@ def get_resolved_alerts():
 
 @app.route('/respond_alert', methods=['POST', 'OPTIONS'])
 def respond_alert():
-    """
-    When admin responds to an alert, update alert and send REAL-TIME notification
-    """
     if request.method == 'OPTIONS':
         return '', 204
         
@@ -417,7 +430,7 @@ def respond_alert():
         if not alert.user_id:
             print(f"⚠️ Warning: Alert {alert_id} has no user_id")
             alert.admin_response = message
-            alert.responded_at = datetime.utcnow()
+            alert.responded_at = get_philippine_time()  # ✅ FIXED
             alert.status = 'received'
             db.session.commit()
             
@@ -426,28 +439,27 @@ def respond_alert():
                 'message': 'Response saved (no user to notify)'
             }), 200
         
-        # Update alert
+        # Update alert with Philippine time
         alert.admin_response = message
-        alert.responded_at = datetime.utcnow()
+        alert.responded_at = get_philippine_time()  # ✅ FIXED
         alert.status = 'received'
         db.session.commit()
         
-        # Create notification with SSE broadcast
+        # Create notification with Philippine time
         notification_data = {
-        'id': f'notif_{alert_id}_{int(datetime.utcnow().timestamp())}',
-        'user_id': str(alert.user_id),
-        'type': 'response',
-        'title': '🚒 Fire Station Response',
-        'message': message,
-        'alert_id': str(alert_id),
-        'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
-        'timestamp': datetime.utcnow().isoformat(),  # ✅ Server time
-        'read': False,
-        'resolve_time': None
-    }
-    
-        save_notification(notification_data)  # This will also send via SSE
-
+            'id': f'notif_{alert_id}_{get_philippine_timestamp()}',  # ✅ FIXED
+            'user_id': str(alert.user_id),
+            'type': 'response',
+            'title': '🚒 Fire Station Response',
+            'message': message,
+            'alert_id': str(alert_id),
+            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
+            'timestamp': get_philippine_time_iso(),  # ✅ FIXED
+            'read': False,
+            'resolve_time': None
+        }
+        
+        save_notification(notification_data)
         
         print(f"✅ Real-time notification sent to user {alert.user_id}")
         
@@ -464,68 +476,36 @@ def respond_alert():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/resolve_alert_with_time', methods=['POST', 'OPTIONS'])
-def resolve_alert_with_time():
-    """
-    Resolve alert and send REAL-TIME notification
-    """
+@app.route('/resolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
+def resolve_alert(alert_id):
     if request.method == 'OPTIONS':
         return '', 204
         
     try:
-        data = request.json
-        alert_id = data.get('alert_id')
-        resolve_time = data.get('resolve_time')
-        
-        if not alert_id or not resolve_time:
-            return jsonify({'error': 'Missing required fields'}), 400
-        
         alert = Alert.query.get(alert_id)
         if not alert:
-            return jsonify({'error': 'Alert not found'}), 404
+            return jsonify({'message': 'Alert not found'}), 404
         
-        # Update alert
-        alert.status = 'resolved'
         alert.resolved = True
-        alert.resolved_at = datetime.utcnow()
-        alert.resolve_time = resolve_time
+        alert.resolved_at = get_philippine_time()  # ✅ FIXED
+        
         db.session.commit()
         
-        # Create and broadcast notification
-        notification_data = {
-            'id': f'notif_{alert_id}_{int(datetime.utcnow().timestamp())}',
-            'user_id': str(alert.user_id),
-            'type': 'resolved',
-            'title': '✅ Fire Alert Resolved',
-            'message': f'Fire at {alert.barangay} has been extinguished at {resolve_time}.',
-            'alert_id': str(alert_id),
-            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
-            'resolve_time': resolve_time,  # ✅ Include this
-            'timestamp': datetime.utcnow().isoformat(),  # ✅ Server time
-            'read': False
-        }
-        
-        save_notification(notification_data)
-        
-        print(f"✅ Alert {alert_id} resolved - real-time notification sent")
-        
+        print(f"✅ Alert {alert_id} marked as resolved")
         return jsonify({
-            'success': True,
-            'message': 'Alert resolved and user notified!'
+            'message': 'Alert marked as resolved',
+            'alert_id': alert_id
         }), 200
         
     except Exception as e:
-        print(f"❌ Error resolving alert: {e}")
+        print("❌ Error resolving alert:", str(e))
         traceback.print_exc()
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'message': 'Server error', 'error': str(e)}), 500
 
 
 @app.route('/delete_alert/<alert_id>', methods=['DELETE', 'OPTIONS'])
 def delete_alert_new(alert_id):
-    """
-    Delete alert and send REAL-TIME notification
-    """
     if request.method == 'OPTIONS':
         return '', 204
         
@@ -537,15 +517,15 @@ def delete_alert_new(alert_id):
         user_id = str(alert.user_id) if alert.user_id else 'unknown'
         location = alert.barangay or f"{alert.latitude}, {alert.longitude}"
         
-        # Create notification before deleting
+        # Create notification with Philippine time
         notification_data = {
-            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
+            'id': f'notif_{alert_id}_{get_philippine_timestamp()}',  # ✅ FIXED
             'user_id': user_id,
             'type': 'deleted',
             'title': '🗑️ Alert Removed',
             'message': f'Your fire alert at {location} has been removed from the system.',
             'alert_id': str(alert_id),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': get_philippine_time_iso(),  # ✅ FIXED
             'read': False,
             'resolve_time': None
         }
@@ -589,7 +569,6 @@ def delete_alert_new(alert_id):
         traceback.print_exc()
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
 
 # ========================================
 # USER NOTIFICATION ENDPOINTS
@@ -877,8 +856,10 @@ def internal_error(error):
 # Add to app.py
 @app.route('/keep-alive')
 def keep_alive():
-    return jsonify({"status": "awake", "timestamp": datetime.utcnow().isoformat()})
-
+    return jsonify({
+        "status": "awake", 
+        "timestamp": get_philippine_time_iso()  # ✅ FIXED
+    })
 # Create Tables
 with app.app_context():
     db.create_all()
