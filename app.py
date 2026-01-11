@@ -434,20 +434,20 @@ def respond_alert():
         
         # Create notification with SSE broadcast
         notification_data = {
-            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': str(alert.user_id),
-            'type': 'response',
-            'title': 'Fire Station Responded!',
-            'message': message,
-            'alert_id': str(alert_id),
-            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
-            'timestamp': datetime.utcnow().isoformat(),
-            'read': False,
-            'resolve_time': None
-        }
-        
-        # This will save AND broadcast via SSE
-        save_notification(notification_data)
+        'id': f'notif_{alert_id}_{int(datetime.utcnow().timestamp())}',
+        'user_id': str(alert.user_id),
+        'type': 'response',
+        'title': '🚒 Fire Station Response',
+        'message': message,
+        'alert_id': str(alert_id),
+        'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
+        'timestamp': datetime.utcnow().isoformat(),  # ✅ Server time
+        'read': False,
+        'resolve_time': None
+    }
+    
+        save_notification(notification_data)  # This will also send via SSE
+
         
         print(f"✅ Real-time notification sent to user {alert.user_id}")
         
@@ -493,15 +493,15 @@ def resolve_alert_with_time():
         
         # Create and broadcast notification
         notification_data = {
-            'id': f'notif_{alert_id}_{int(datetime.now().timestamp())}',
-            'user_id': str(alert.user_id) if alert.user_id else 'unknown',
+            'id': f'notif_{alert_id}_{int(datetime.utcnow().timestamp())}',
+            'user_id': str(alert.user_id),
             'type': 'resolved',
             'title': '✅ Fire Alert Resolved',
-            'message': f'Fire at {alert.barangay or "your location"} has been extinguished at {resolve_time}.',
+            'message': f'Fire at {alert.barangay} has been extinguished at {resolve_time}.',
             'alert_id': str(alert_id),
             'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
-            'resolve_time': resolve_time,
-            'timestamp': datetime.utcnow().isoformat(),
+            'resolve_time': resolve_time,  # ✅ Include this
+            'timestamp': datetime.utcnow().isoformat(),  # ✅ Server time
             'read': False
         }
         
