@@ -476,32 +476,58 @@ def respond_alert():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/resolve_alert/<int:alert_id>', methods=['POST', 'OPTIONS'])
-def resolve_alert(alert_id):
+@app.route('/resolve_alert_with_time', methods=['POST', 'OPTIONS'])
+def resolve_alert_with_time():
     if request.method == 'OPTIONS':
         return '', 204
         
     try:
+        data = request.json
+        alert_id = data.get('alert_id')
+        resolve_time = data.get('resolve_time')
+        
+        if not alert_id or not resolve_time:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
         alert = Alert.query.get(alert_id)
         if not alert:
-            return jsonify({'message': 'Alert not found'}), 404
+            return jsonify({'error': 'Alert not found'}), 404
         
+        # Update alert with Philippine time
+        alert.status = 'resolved'
         alert.resolved = True
         alert.resolved_at = get_philippine_time()  # ✅ FIXED
-        
+        alert.resolve_time = resolve_time
         db.session.commit()
         
-        print(f"✅ Alert {alert_id} marked as resolved")
+        # Create notification with Philippine time
+        notification_data = {
+            'id': f'notif_{alert_id}_{get_philippine_timestamp()}',  # ✅ FIXED
+            'user_id': str(alert.user_id) if alert.user_id else 'unknown',
+            'type': 'resolved',
+            'title': '✅ Fire Alert Resolved',
+            'message': f'Fire at {alert.barangay or "your location"} has been extinguished at {resolve_time}.',
+            'alert_id': str(alert_id),
+            'alert_location': alert.barangay or f"{alert.latitude}, {alert.longitude}",
+            'resolve_time': resolve_time,
+            'timestamp': get_philippine_time_iso(),  # ✅ FIXED
+            'read': False
+        }
+        
+        save_notification(notification_data)
+        
+        print(f"✅ Alert {alert_id} resolved - real-time notification sent")
+        
         return jsonify({
-            'message': 'Alert marked as resolved',
-            'alert_id': alert_id
+            'success': True,
+            'message': 'Alert resolved and user notified!'
         }), 200
         
     except Exception as e:
-        print("❌ Error resolving alert:", str(e))
+        print(f"❌ Error resolving alert: {e}")
         traceback.print_exc()
         db.session.rollback()
-        return jsonify({'message': 'Server error', 'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/delete_alert/<alert_id>', methods=['DELETE', 'OPTIONS'])
