@@ -7,6 +7,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 import json
 import time
+import math
 from queue import Queue
 from threading import Lock
 
@@ -50,6 +51,8 @@ def get_philippine_time_iso():
 def get_philippine_timestamp():
     """Get current timestamp in Philippine timezone"""
     return int(get_philippine_time().timestamp())
+
+
 
 app = Flask(__name__)
 
@@ -298,9 +301,139 @@ def mark_notification_as_read(notification_id):
         print(f"❌ Error marking notification as read: {e}")
 
 
+def haversine_distance(coord1, coord2):
+    """Calculate distance between two lat/lng coordinates in km"""
+    R = 6371  # Earth's radius in km
+    
+    lat1, lon1 = math.radians(coord1[0]), math.radians(coord1[1])
+    lat2, lon2 = math.radians(coord2[0]), math.radians(coord2[1])
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    return R * c
+
+
+def find_nearest_node(target_lat, target_lng, node_coords):
+    """Find the nearest node in the graph to the given coordinates"""
+    min_distance = float('inf')
+    nearest_node = None
+    
+    for node, coords in node_coords.items():
+        distance = haversine_distance([target_lat, target_lng], coords)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_node = node
+    
+    return nearest_node, min_distance
+
 # ========================================
 # DIJKSTRA ROUTE
 # ========================================
+
+@app.route('/get_alert_route', methods=['GET', 'OPTIONS'])
+def get_alert_route():
+    """Calculate shortest route from fire station to alert location"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        # Get alert coordinates
+        alert_lat = float(request.args.get('lat'))
+        alert_lng = float(request.args.get('lng'))
+        
+        print(f"🚒 Calculating route to: {alert_lat}, {alert_lng}")
+        
+        # Fire station coordinates
+        fire_station_coords = [8.476776975907958, 123.7968330650085]
+        
+        # Find nearest nodes to fire station and alert location
+        start_node, start_dist = find_nearest_node(
+            fire_station_coords[0], 
+            fire_station_coords[1], 
+            node_coords
+        )
+        
+        end_node, end_dist = find_nearest_node(
+            alert_lat, 
+            alert_lng, 
+            node_coords
+        )
+        
+        print(f"📍 Nearest node to Fire Station: {start_node} ({start_dist:.3f} km away)")
+        print(f"📍 Nearest node to Alert: {end_node} ({end_dist:.3f} km away)")
+        
+        # Calculate shortest path using Dijkstra
+        path_nodes = dijkstra(road_graph, start_node, end_node)
+        
+        if not path_nodes:
+            return jsonify({
+                'success': False,
+                'error': 'No route found'
+            }), 404
+        
+        # Convert node names to coordinates
+        route_coords = []
+        
+        # Add actual fire station as first point
+        route_coords.append({
+            'lat': fire_station_coords[0],
+            'lng': fire_station_coords[1],
+            'label': 'Fire Station'
+        })
+        
+        # Add path nodes
+        for i, node in enumerate(path_nodes):
+            coords = node_coords[node]
+            route_coords.append({
+                'lat': coords[0],
+                'lng': coords[1],
+                'label': node,
+                'isJunction': True
+            })
+        
+        # Add actual alert location as last point
+        route_coords.append({
+            'lat': alert_lat,
+            'lng': alert_lng,
+            'label': 'Fire Incident'
+        })
+        
+        # Calculate total distance
+        total_distance = start_dist  # Fire station to first node
+        for i in range(len(path_nodes) - 1):
+            node1 = path_nodes[i]
+            node2 = path_nodes[i + 1]
+            if node2 in road_graph[node1]:
+                total_distance += road_graph[node1][node2]
+        total_distance += end_dist  # Last node to alert
+        
+        print(f"✅ Route calculated: {len(route_coords)} points, {total_distance:.2f} km")
+        
+        return jsonify({
+            'success': True,
+            'route': route_coords,
+            'path_nodes': path_nodes,
+            'total_distance': round(total_distance, 2),
+            'start_node': start_node,
+            'end_node': end_node
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid coordinates'
+        }), 400
+    except Exception as e:
+        print(f"❌ Error calculating route: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/get-shortest-route')
 def get_shortest_route():
