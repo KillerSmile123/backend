@@ -62,10 +62,10 @@ CORS(
             "origins": [
                 "https://sunog-user.onrender.com",
                 "https://sunog-admin.onrender.com",
-                "http://localhost:*",  # For development
-                "http://127.0.0.1:*"   # For development
+                "http://localhost:*",
+                "http://127.0.0.1:*"
             ],
-            "allow_headers": ["Content-Type", "Accept"],
+            "allow_headers": ["*"],  # ✅ Allow all headers (simpler)
             "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
             "expose_headers": ["Content-Type"],
             "max_age": 3600
