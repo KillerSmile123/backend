@@ -3,6 +3,7 @@
 from flask import Flask, jsonify, request, render_template, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import os
+import requests 
 import traceback
 from datetime import datetime, timedelta, timezone
 import json
@@ -12,9 +13,6 @@ from queue import Queue
 from threading import Lock
 
 from sqlalchemy import text
-
-from dijkstra import dijkstra
-from graph_data import road_graph
 
 # Import your database setup
 from model.user import User
@@ -27,7 +25,7 @@ from route.adminauth_route import login_bp
 from route.userauth_route import auth_bp
 from route.notification_route import notification_bp
 
-from node_coordinates import node_coords
+
 
 from dotenv import load_dotenv
 
@@ -317,18 +315,7 @@ def haversine_distance(coord1, coord2):
     return R * c
 
 
-def find_nearest_node(target_lat, target_lng, node_coords):
-    """Find the nearest node in the graph to the given coordinates"""
-    min_distance = float('inf')
-    nearest_node = None
-    
-    for node, coords in node_coords.items():
-        distance = haversine_distance([target_lat, target_lng], coords)
-        if distance < min_distance:
-            min_distance = distance
-            nearest_node = node
-    
-    return nearest_node, min_distance
+
 
 # ========================================
 # DIJKSTRA ROUTE
@@ -336,12 +323,11 @@ def find_nearest_node(target_lat, target_lng, node_coords):
 
 @app.route('/get_alert_route', methods=['GET', 'OPTIONS'])
 def get_alert_route():
-    """Calculate shortest route from fire station to alert location"""
+    """Calculate shortest route using OpenRouteService API (OpenStreetMap data)"""
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
-        # Get alert coordinates
         alert_lat = float(request.args.get('lat'))
         alert_lng = float(request.args.get('lng'))
         
@@ -350,107 +336,138 @@ def get_alert_route():
         # Fire station coordinates
         fire_station_coords = [8.476776975907958, 123.7968330650085]
         
-        # Find nearest nodes to fire station and alert location
-        start_node, start_dist = find_nearest_node(
-            fire_station_coords[0], 
-            fire_station_coords[1], 
-            node_coords
-        )
+        # Get API key from environment
+        api_key = os.getenv('OPENROUTE_API_KEY')
         
-        end_node, end_dist = find_nearest_node(
-            alert_lat, 
-            alert_lng, 
-            node_coords
-        )
-        
-        print(f"📍 Nearest node to Fire Station: {start_node} ({start_dist:.3f} km away)")
-        print(f"📍 Nearest node to Alert: {end_node} ({end_dist:.3f} km away)")
-        
-        # Calculate shortest path using Dijkstra
-        path_nodes = dijkstra(road_graph, start_node, end_node)
-        
-        if not path_nodes:
+        if not api_key:
+            print("⚠️ OPENROUTE_API_KEY not set in environment")
             return jsonify({
                 'success': False,
-                'error': 'No route found'
-            }), 404
+                'error': 'OpenRouteService API key not configured. Please add OPENROUTE_API_KEY to your .env file'
+            }), 500
         
-        # Convert node names to coordinates
+        # OpenRouteService API endpoint
+        url = "https://api.openrouteservice.org/v2/directions/driving-car"
+        
+        headers = {
+            'Authorization': api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        # Coordinates must be in [longitude, latitude] format for ORS
+        body = {
+            "coordinates": [
+                [fire_station_coords[1], fire_station_coords[0]],  # Fire station [lng, lat]
+                [alert_lng, alert_lat]  # Alert location [lng, lat]
+            ],
+            "instructions": False,  # We don't need turn-by-turn instructions
+            "elevation": False  # We don't need elevation data
+        }
+        
+        print(f"📡 Sending request to OpenRouteService...")
+        
+        # Make API request with timeout
+        response = requests.post(url, json=body, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            error_data = response.json() if response.content else {}
+            print(f"❌ ORS API error {response.status_code}: {error_data}")
+            
+            if response.status_code == 401:
+                error_msg = 'Invalid API key. Please check your OPENROUTE_API_KEY'
+            elif response.status_code == 403:
+                error_msg = 'API key quota exceeded or forbidden'
+            elif response.status_code == 404:
+                error_msg = 'No route found between these locations'
+            else:
+                error_msg = f'Routing service error: {response.status_code}'
+            
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), response.status_code
+        
+        data = response.json()
+        
+        # Extract route information
+        route_geometry = data['features'][0]['geometry']['coordinates']
+        route_summary = data['features'][0]['properties']['summary']
+        
+        # Get distance and duration
+        distance_km = route_summary['distance'] / 1000  # Convert meters to km
+        duration_seconds = route_summary['duration']
+        duration_minutes = duration_seconds / 60
+        
+        # Convert route coordinates to our format
         route_coords = []
         
-        # Add actual fire station as first point
+        # Add fire station as first point
         route_coords.append({
             'lat': fire_station_coords[0],
             'lng': fire_station_coords[1],
-            'label': 'Fire Station'
+            'label': 'Fire Station',
+            'isStart': True
         })
         
-        # Add path nodes
-        for i, node in enumerate(path_nodes):
-            coords = node_coords[node]
+        # Add all route points (convert from [lng, lat] to {lat, lng})
+        for i, coord in enumerate(route_geometry):
             route_coords.append({
-                'lat': coords[0],
-                'lng': coords[1],
-                'label': node,
-                'isJunction': True
+                'lat': coord[1],
+                'lng': coord[0],
+                'isJunction': i % 5 == 0  # Mark every 5th point as junction for visualization
             })
         
-        # Add actual alert location as last point
+        # Add alert location as last point
         route_coords.append({
             'lat': alert_lat,
             'lng': alert_lng,
-            'label': 'Fire Incident'
+            'label': 'Fire Incident',
+            'isEnd': True
         })
         
-        # Calculate total distance
-        total_distance = start_dist  # Fire station to first node
-        for i in range(len(path_nodes) - 1):
-            node1 = path_nodes[i]
-            node2 = path_nodes[i + 1]
-            if node2 in road_graph[node1]:
-                total_distance += road_graph[node1][node2]
-        total_distance += end_dist  # Last node to alert
-        
-        print(f"✅ Route calculated: {len(route_coords)} points, {total_distance:.2f} km")
+        print(f"✅ Route calculated successfully:")
+        print(f"   Distance: {distance_km:.2f} km")
+        print(f"   Duration: {duration_minutes:.1f} minutes")
+        print(f"   Route points: {len(route_coords)}")
         
         return jsonify({
             'success': True,
             'route': route_coords,
-            'path_nodes': path_nodes,
-            'total_distance': round(total_distance, 2),
-            'start_node': start_node,
-            'end_node': end_node
+            'total_distance': round(distance_km, 2),
+            'estimated_duration': round(duration_minutes, 1),
+            'duration_seconds': round(duration_seconds),
+            'source': 'OpenRouteService',
+            'map_data': 'OpenStreetMap'
         }), 200
         
-    except ValueError as e:
+    except requests.exceptions.Timeout:
+        print("❌ Request timeout")
         return jsonify({
             'success': False,
-            'error': 'Invalid coordinates'
+            'error': 'Routing service request timed out. Please try again.'
+        }), 504
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Network error: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Could not connect to routing service. Please check your internet connection.'
+        }), 503
+        
+    except ValueError as e:
+        print(f"❌ Invalid coordinates: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Invalid coordinates provided'
         }), 400
+        
     except Exception as e:
-        print(f"❌ Error calculating route: {e}")
+        print(f"❌ Unexpected error calculating route: {e}")
         traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
-
-@app.route('/get-shortest-route')
-def get_shortest_route():
-    start = request.args.get('start')
-    end = request.args.get('end')
-
-    path = dijkstra(road_graph, start, end)
-
-    if not path:
-        return jsonify({"error": "No path found"}), 404
-
-    try:
-        coords = [node_coords[node] for node in path]
-    except KeyError as e:
-        return jsonify({"error": f"Missing node coordinate: {e}"}), 500
-
-    return jsonify(coords)
 
 
 # ========================================
