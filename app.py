@@ -360,9 +360,9 @@ def get_alert_route():
                 [fire_station_coords[1], fire_station_coords[0]],  # Fire station [lng, lat]
                 [alert_lng, alert_lat]  # Alert location [lng, lat]
             ],
-            "instructions": False,  # We don't need turn-by-turn instructions
-            "elevation": False,  # We don't need elevation data
-            "geometry": True  # Make sure we get geometry back
+            "instructions": False,
+            "elevation": False,
+            "geometry_format": "geojson"  # Request GeoJSON format instead of encoded polyline
         }
         
         print(f"📡 Sending request to OpenRouteService...")
@@ -390,12 +390,9 @@ def get_alert_route():
         
         data = response.json()
         
-        # DEBUG: Print the response structure
-        print(f"📦 API Response keys: {data.keys()}")
-        
         # Check if routes exist
         if 'routes' not in data or len(data['routes']) == 0:
-            print(f"❌ No routes found in response: {data}")
+            print(f"❌ No routes found in response")
             return jsonify({
                 'success': False,
                 'error': 'No route found between these locations'
@@ -404,45 +401,16 @@ def get_alert_route():
         # Extract route information
         route = data['routes'][0]
         
-        # DEBUG: Check geometry structure
-        print(f"📦 Route keys: {route.keys()}")
-        print(f"📦 Geometry type: {type(route.get('geometry'))}")
-        
-        # Handle different geometry formats
+        # Get geometry
         if 'geometry' in route:
             geometry = route['geometry']
             
-            # If geometry is a string (encoded polyline), we need to decode it
-            if isinstance(geometry, str):
-                print("⚠️ Geometry is encoded string, attempting to use segments instead")
-                # Use the route segments which should have coordinates
-                if 'segments' in route and len(route['segments']) > 0:
-                    # Get all step coordinates from segments
-                    route_coords_raw = []
-                    for segment in route['segments']:
-                        if 'steps' in segment:
-                            for step in segment['steps']:
-                                if 'way_points' in step:
-                                    route_coords_raw.extend(step['way_points'])
-                    
-                    # way_points are indices, we need the actual coordinates
-                    # Let's use a simpler approach - just use start and end points
-                    route_geometry = [
-                        [fire_station_coords[1], fire_station_coords[0]],
-                        [alert_lng, alert_lat]
-                    ]
-                else:
-                    # Fallback: just draw straight line
-                    route_geometry = [
-                        [fire_station_coords[1], fire_station_coords[0]],
-                        [alert_lng, alert_lat]
-                    ]
-            elif isinstance(geometry, dict) and 'coordinates' in geometry:
-                # GeoJSON format
+            # Check if it's GeoJSON format (dict with coordinates)
+            if isinstance(geometry, dict) and 'coordinates' in geometry:
                 route_geometry = geometry['coordinates']
+                print(f"📍 Using GeoJSON geometry with {len(route_geometry)} points")
             else:
-                print(f"❌ Unknown geometry format: {geometry}")
-                # Fallback: straight line
+                print(f"⚠️ Unexpected geometry format, using straight line")
                 route_geometry = [
                     [fire_station_coords[1], fire_station_coords[0]],
                     [alert_lng, alert_lat]
@@ -527,7 +495,6 @@ def get_alert_route():
     
     except KeyError as e:
         print(f"❌ Missing key in response: {e}")
-        print(f"📦 Response data: {data if 'data' in locals() else 'No data'}")
         return jsonify({
             'success': False,
             'error': f'Invalid response structure: missing {str(e)}'
