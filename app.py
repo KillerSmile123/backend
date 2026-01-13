@@ -334,7 +334,7 @@ def get_alert_route():
         print(f"🚒 Calculating route to: {alert_lat}, {alert_lng}")
         
         # Fire station coordinates
-        fire_station_coords = [8.476723719070502,  123.7970718508905]
+        fire_station_coords = [8.476723719070502, 123.7970718508905]
         
         # Get API key from environment
         api_key = os.getenv('OPENROUTE_API_KEY')
@@ -389,9 +389,22 @@ def get_alert_route():
         
         data = response.json()
         
-        # Extract route information
-        route_geometry = data['features'][0]['geometry']['coordinates']
-        route_summary = data['features'][0]['properties']['summary']
+        # DEBUG: Print the response structure
+        print(f"📦 API Response keys: {data.keys()}")
+        
+        # FIX: OpenRouteService POST response uses 'routes' not 'features'
+        if 'routes' not in data:
+            print(f"❌ Unexpected response structure: {data}")
+            return jsonify({
+                'success': False,
+                'error': 'Unexpected response from routing service',
+                'debug_keys': list(data.keys())
+            }), 500
+        
+        # Extract route information from 'routes' array
+        route = data['routes'][0]
+        route_geometry = route['geometry']['coordinates']
+        route_summary = route['summary']
         
         # Get distance and duration
         distance_km = route_summary['distance'] / 1000  # Convert meters to km
@@ -460,6 +473,14 @@ def get_alert_route():
             'success': False,
             'error': 'Invalid coordinates provided'
         }), 400
+    
+    except KeyError as e:
+        print(f"❌ Missing key in response: {e}")
+        print(f"📦 Response data: {data if 'data' in locals() else 'No data'}")
+        return jsonify({
+            'success': False,
+            'error': f'Invalid response structure: missing {str(e)}'
+        }), 500
         
     except Exception as e:
         print(f"❌ Unexpected error calculating route: {e}")
