@@ -346,8 +346,8 @@ def get_alert_route():
                 'error': 'OpenRouteService API key not configured. Please add OPENROUTE_API_KEY to your .env file'
             }), 500
         
-        # OpenRouteService API endpoint
-        url = "https://api.openrouteservice.org/v2/directions/driving-car"
+        # OpenRouteService API endpoint for GeoJSON response
+        url = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
         
         headers = {
             'Authorization': api_key,
@@ -361,8 +361,7 @@ def get_alert_route():
                 [alert_lng, alert_lat]  # Alert location [lng, lat]
             ],
             "instructions": False,
-            "elevation": False,
-            "geometry_format": "geojson"  # Request GeoJSON format instead of encoded polyline
+            "elevation": False
         }
         
         print(f"📡 Sending request to OpenRouteService...")
@@ -390,40 +389,19 @@ def get_alert_route():
         
         data = response.json()
         
-        # Check if routes exist
-        if 'routes' not in data or len(data['routes']) == 0:
+        # GeoJSON response has features array
+        if 'features' not in data or len(data['features']) == 0:
             print(f"❌ No routes found in response")
             return jsonify({
                 'success': False,
                 'error': 'No route found between these locations'
             }), 404
         
-        # Extract route information
-        route = data['routes'][0]
-        
-        # Get geometry
-        if 'geometry' in route:
-            geometry = route['geometry']
-            
-            # Check if it's GeoJSON format (dict with coordinates)
-            if isinstance(geometry, dict) and 'coordinates' in geometry:
-                route_geometry = geometry['coordinates']
-                print(f"📍 Using GeoJSON geometry with {len(route_geometry)} points")
-            else:
-                print(f"⚠️ Unexpected geometry format, using straight line")
-                route_geometry = [
-                    [fire_station_coords[1], fire_station_coords[0]],
-                    [alert_lng, alert_lat]
-                ]
-        else:
-            print("⚠️ No geometry in route, using straight line")
-            route_geometry = [
-                [fire_station_coords[1], fire_station_coords[0]],
-                [alert_lng, alert_lat]
-            ]
-        
-        # Get summary information
-        route_summary = route.get('summary', {})
+        # Extract route information from GeoJSON
+        feature = data['features'][0]
+        route_geometry = feature['geometry']['coordinates']
+        route_properties = feature['properties']
+        route_summary = route_properties.get('summary', {})
         
         # Get distance and duration
         distance_km = route_summary.get('distance', 0) / 1000  # Convert meters to km
