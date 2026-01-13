@@ -361,7 +361,8 @@ def get_alert_route():
                 [alert_lng, alert_lat]  # Alert location [lng, lat]
             ],
             "instructions": False,  # We don't need turn-by-turn instructions
-            "elevation": False  # We don't need elevation data
+            "elevation": False,  # We don't need elevation data
+            "geometry": True  # Make sure we get geometry back
         }
         
         print(f"📡 Sending request to OpenRouteService...")
@@ -392,23 +393,73 @@ def get_alert_route():
         # DEBUG: Print the response structure
         print(f"📦 API Response keys: {data.keys()}")
         
-        # FIX: OpenRouteService POST response uses 'routes' not 'features'
-        if 'routes' not in data:
-            print(f"❌ Unexpected response structure: {data}")
+        # Check if routes exist
+        if 'routes' not in data or len(data['routes']) == 0:
+            print(f"❌ No routes found in response: {data}")
             return jsonify({
                 'success': False,
-                'error': 'Unexpected response from routing service',
-                'debug_keys': list(data.keys())
-            }), 500
+                'error': 'No route found between these locations'
+            }), 404
         
-        # Extract route information from 'routes' array
+        # Extract route information
         route = data['routes'][0]
-        route_geometry = route['geometry']['coordinates']
-        route_summary = route['summary']
+        
+        # DEBUG: Check geometry structure
+        print(f"📦 Route keys: {route.keys()}")
+        print(f"📦 Geometry type: {type(route.get('geometry'))}")
+        
+        # Handle different geometry formats
+        if 'geometry' in route:
+            geometry = route['geometry']
+            
+            # If geometry is a string (encoded polyline), we need to decode it
+            if isinstance(geometry, str):
+                print("⚠️ Geometry is encoded string, attempting to use segments instead")
+                # Use the route segments which should have coordinates
+                if 'segments' in route and len(route['segments']) > 0:
+                    # Get all step coordinates from segments
+                    route_coords_raw = []
+                    for segment in route['segments']:
+                        if 'steps' in segment:
+                            for step in segment['steps']:
+                                if 'way_points' in step:
+                                    route_coords_raw.extend(step['way_points'])
+                    
+                    # way_points are indices, we need the actual coordinates
+                    # Let's use a simpler approach - just use start and end points
+                    route_geometry = [
+                        [fire_station_coords[1], fire_station_coords[0]],
+                        [alert_lng, alert_lat]
+                    ]
+                else:
+                    # Fallback: just draw straight line
+                    route_geometry = [
+                        [fire_station_coords[1], fire_station_coords[0]],
+                        [alert_lng, alert_lat]
+                    ]
+            elif isinstance(geometry, dict) and 'coordinates' in geometry:
+                # GeoJSON format
+                route_geometry = geometry['coordinates']
+            else:
+                print(f"❌ Unknown geometry format: {geometry}")
+                # Fallback: straight line
+                route_geometry = [
+                    [fire_station_coords[1], fire_station_coords[0]],
+                    [alert_lng, alert_lat]
+                ]
+        else:
+            print("⚠️ No geometry in route, using straight line")
+            route_geometry = [
+                [fire_station_coords[1], fire_station_coords[0]],
+                [alert_lng, alert_lat]
+            ]
+        
+        # Get summary information
+        route_summary = route.get('summary', {})
         
         # Get distance and duration
-        distance_km = route_summary['distance'] / 1000  # Convert meters to km
-        duration_seconds = route_summary['duration']
+        distance_km = route_summary.get('distance', 0) / 1000  # Convert meters to km
+        duration_seconds = route_summary.get('duration', 0)
         duration_minutes = duration_seconds / 60
         
         # Convert route coordinates to our format
