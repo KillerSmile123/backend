@@ -334,7 +334,7 @@ def get_alert_route():
         print(f"🚒 Calculating route to: {alert_lat}, {alert_lng}")
         
         # Fire station coordinates
-        fire_station_coords = [8.476776975907958, 123.7968330650085]
+        fire_station_coords = [8.459527, 123.80065]
         
         # Get API key from environment
         api_key = os.getenv('OPENROUTE_API_KEY')
