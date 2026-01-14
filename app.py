@@ -514,7 +514,7 @@ def get_alerts():
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': 'resolved' if alert.resolved else 'Pending',
+                'status': 'resolved' if alert.resolved else 'pending',
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
             })
         
@@ -763,6 +763,200 @@ def delete_alert_new(alert_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/mark_spam/<alert_id>', methods=['POST', 'OPTIONS'])
+def mark_spam(alert_id):
+    """Mark an alert as spam and move it to spam section"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        user_id = str(alert.user_id) if alert.user_id else 'unknown'
+        location = alert.barangay or f"{alert.latitude}, {alert.longitude}"
+        
+        # Update alert status to spam
+        alert.status = 'spam'
+        alert.resolved = True  # Mark as resolved to remove from active alerts
+        alert.resolved_at = get_philippine_time()
+        
+        db.session.commit()
+        
+        # Create notification to inform user
+        notification_data = {
+            'id': f'notif_{alert_id}_{get_philippine_timestamp()}',
+            'user_id': user_id,
+            'type': 'spam',
+            'title': '⚠️ Alert Marked as Spam',
+            'message': f'Your fire alert at {location} has been marked as spam and removed from active alerts.',
+            'alert_id': str(alert_id),
+            'alert_location': location,
+            'timestamp': get_philippine_time_iso(),
+            'read': False,
+            'resolve_time': None
+        }
+        
+        save_notification(notification_data)
+        
+        print(f"✅ Alert {alert_id} marked as spam - real-time notification sent")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Alert marked as spam and user notified!'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error marking alert as spam: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/get_spam_alerts', methods=['GET', 'OPTIONS'])
+def get_spam_alerts():
+    """Get all alerts marked as spam"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        spam_alerts = Alert.query.filter_by(status='spam').order_by(Alert.timestamp.desc()).all()
+        
+        alerts_list = []
+        for alert in spam_alerts:
+            alerts_list.append({
+                'id': alert.id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'location': alert.barangay,
+                'photo_url': alert.photo_filename,
+                'video_url': alert.video_filename,
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'markedSpamAt': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'status': 'Spam'
+            })
+        
+        print(f"📋 Retrieved {len(alerts_list)} spam alerts")
+        
+        return jsonify({
+            'spam': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print("❌ Error fetching spam alerts:", str(e))
+        traceback.print_exc()
+        return jsonify({
+            'spam': [],
+            'count': 0
+        }), 200
+
+
+@app.route('/restore_spam_alert/<alert_id>', methods=['POST', 'OPTIONS'])
+def restore_spam_alert(alert_id):
+    """Restore an alert from spam back to active alerts"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        user_id = str(alert.user_id) if alert.user_id else 'unknown'
+        location = alert.barangay or f"{alert.latitude}, {alert.longitude}"
+        
+        # Restore alert to pending status
+        alert.status = 'pending'
+        alert.resolved = False
+        alert.resolved_at = None
+        
+        db.session.commit()
+        
+        # Create notification to inform user
+        notification_data = {
+            'id': f'notif_{alert_id}_{get_philippine_timestamp()}',
+            'user_id': user_id,
+            'type': 'restored',
+            'title': '✅ Alert Restored',
+            'message': f'Your fire alert at {location} has been restored and is now active again.',
+            'alert_id': str(alert_id),
+            'alert_location': location,
+            'timestamp': get_philippine_time_iso(),
+            'read': False,
+            'resolve_time': None
+        }
+        
+        save_notification(notification_data)
+        
+        print(f"✅ Alert {alert_id} restored from spam - real-time notification sent")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Alert restored and user notified!'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error restoring alert from spam: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/delete_spam_alert/<alert_id>', methods=['DELETE', 'OPTIONS'])
+def delete_spam_alert(alert_id):
+    """Permanently delete a spam alert"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # Delete media from Cloudinary
+        if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
+            try:
+                parts = alert.photo_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    delete_from_cloudinary(public_id, resource_type="image")
+            except Exception as e:
+                print(f"⚠️ Photo deletion failed: {e}")
+        
+        if alert.video_filename and 'cloudinary.com' in alert.video_filename:
+            try:
+                parts = alert.video_filename.split('/')
+                if 'fire_alerts' in parts:
+                    idx = parts.index('fire_alerts')
+                    public_id = '/'.join(parts[idx:]).split('.')[0]
+                    delete_from_cloudinary(public_id, resource_type="video")
+            except Exception as e:
+                print(f"⚠️ Video deletion failed: {e}")
+        
+        # Delete from database
+        db.session.delete(alert)
+        db.session.commit()
+        
+        print(f"✅ Spam alert {alert_id} permanently deleted")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Spam alert permanently deleted!'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error deleting spam alert: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 # ========================================
 # USER NOTIFICATION ENDPOINTS
 # ========================================
@@ -839,7 +1033,7 @@ def get_user_alerts(user_id):
                 'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
                 'resolve_time': alert.resolve_time,
-                'status': alert.status or 'Pending'
+                'status': alert.status or 'pending'
             }
             for alert in alerts
         ]
