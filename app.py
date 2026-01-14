@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 # Import your database setup
 from model.user import User
+from model.admin_model import Admin
 from model.alert_model import Alert
 from model.notification_model import Notification  
 from database import init_db, db
@@ -1220,6 +1221,68 @@ def delete_notification(notification_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Notification not found'}), 404
 
+
+
+# Get admin profile
+@app.route('/admin/profile/<int:admin_id>', methods=['GET'])
+def get_admin_profile(admin_id):
+    admin = Admin.query.get(admin_id)
+    if not admin:
+        return jsonify({'message': 'Admin not found'}), 404
+    
+    return jsonify(admin.to_dict()), 200
+
+# Update admin profile
+@app.route('/admin/profile/<int:admin_id>', methods=['PUT'])
+def update_admin_profile(admin_id):
+    data = request.get_json()
+    admin = Admin.query.get(admin_id)
+    
+    if not admin:
+        return jsonify({'message': 'Admin not found'}), 404
+    
+    admin.fullname = data.get('fullname', admin.fullname)
+    admin.email = data.get('email', admin.email)
+    admin.contact = data.get('contact', admin.contact)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Profile updated successfully',
+        'admin': admin.to_dict()
+    }), 200
+
+# Upload profile picture
+@app.route('/admin/upload_picture', methods=['POST'])
+def upload_picture():
+    if 'profile_picture' not in request.files:
+        return jsonify({'message': 'No file uploaded'}), 400
+    
+    file = request.files['profile_picture']
+    admin_id = request.form.get('admin_id')
+    
+    admin = Admin.query.get(admin_id)
+    if not admin:
+        return jsonify({'message': 'Admin not found'}), 404
+    
+    # Create uploads folder if doesn't exist
+    import os
+    upload_folder = 'static/uploads'
+    os.makedirs(upload_folder, exist_ok=True)
+    
+    # Save file
+    filename = f"admin_{admin_id}_{file.filename}"
+    filepath = os.path.join(upload_folder, filename)
+    file.save(filepath)
+    
+    # Update database
+    admin.profile_picture = f'/static/uploads/{filename}'
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Picture uploaded successfully',
+        'profile_picture': admin.profile_picture
+    }), 200
 
 # Error Handlers
 @app.errorhandler(404)
