@@ -514,7 +514,7 @@ def get_alerts():
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': 'resolved' if alert.resolved else 'pending',
+                'status': 'resolved' if alert.resolved else 'Pending',
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
             })
         
@@ -839,7 +839,7 @@ def get_user_alerts(user_id):
                 'responded_at': alert.responded_at.isoformat() if alert.responded_at else None,
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
                 'resolve_time': alert.resolve_time,
-                'status': alert.status or 'pending'
+                'status': alert.status or 'Pending'
             }
             for alert in alerts
         ]
