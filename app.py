@@ -61,15 +61,10 @@ CORS(
     supports_credentials=True,
     resources={
         r"/*": {
-            "origins": [
-                "https://sunog-user.onrender.com",
-                "https://sunog-admin.onrender.com",
-                "http://localhost:*",
-                "http://127.0.0.1:*"
-            ],
-            "allow_headers": ["*"],  # ✅ Allow all headers (simpler)
+            "origins": "*",  # ✅ Allow ALL origins
+            "allow_headers": ["*"],  # ✅ Allow all headers
             "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-            "expose_headers": ["Content-Type"],
+            "expose_headers": ["Content-Type", "Authorization"],
             "max_age": 3600
         }
     }
