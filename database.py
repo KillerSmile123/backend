@@ -1,4 +1,4 @@
-#databsase.py
+# database.py
 
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask
@@ -6,12 +6,12 @@ from flask import Flask
 db = SQLAlchemy()
 
 def init_db(app: Flask):
-    # Railway MySQL credentials
+    # Railway MySQL credentials (from your mysql command)
     user = "root"
-    password = "EkWtqIHFUsYPygWVBVisnJMoBLmLSnlc"
-    host = "mainline.proxy.rlwy.net"
-    port = "11651"
-    name = "railway"
+    password = "haeBEYARIvWORZkhUctpVRNscoYSEgaZ"
+    host = "switchback.proxy.rlwy.net"
+    port = "58700"
+    name = "railway"  # Replace with your actual database name if different
 
     # SQLAlchemy connection string
     app.config['SQLALCHEMY_DATABASE_URI'] = (
