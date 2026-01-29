@@ -95,7 +95,7 @@ app.register_blueprint(auth_bp, url_prefix='/user')
 app.register_blueprint(login_bp)
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
-app.register_blueprint(notification_bp, url_prefix='/notifications')
+app.register_blueprint(notification_bp)
 
 
 # ========================================
@@ -953,48 +953,6 @@ def delete_spam_alert(alert_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-# ========================================
-# USER NOTIFICATION ENDPOINTS
-# ========================================
-
-@app.route('/get_user_notifications/<user_id>', methods=['GET', 'OPTIONS'])
-def get_user_notifications(user_id):
-    """Get all notifications for a specific user"""
-    if request.method == 'OPTIONS':
-        return '', 204
-        
-    try:
-        notifications = get_notifications_by_user(user_id)
-        
-        return jsonify({
-            'success': True,
-            'notifications': notifications
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ Error getting notifications: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/mark_notification_read/<notification_id>', methods=['POST', 'OPTIONS'])
-def mark_notification_read(notification_id):
-    """Mark a notification as read"""
-    if request.method == 'OPTIONS':
-        return '', 204
-        
-    try:
-        mark_notification_as_read(notification_id)
-        
-        return jsonify({
-            'success': True,
-            'message': 'Notification marked as read'
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ Error marking notification as read: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/get_user_alerts/<user_id>', methods=['GET', 'OPTIONS'])

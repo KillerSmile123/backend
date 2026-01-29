@@ -1,174 +1,269 @@
-#notification_route.py
+# notification_route.py - UPDATED with real database
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from functools import wraps
+from sqlalchemy import text
+from database import db
+import traceback
 
-notification_bp = Blueprint('notifications', __name__, url_prefix='/api/notifications')
+notification_bp = Blueprint('notifications', __name__)
 
-# Mock database (replace with actual database in production)
-notifications_db = []
-notification_id_counter = 1
-
-# Mock authentication decorator (replace with actual auth in production)
+# Simple auth check (you can enhance this later)
 def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            return jsonify({'error': 'Authorization header required'}), 401
-        # Add your actual authentication logic here
+        # For now, we'll skip strict auth since your app uses localStorage userId
+        # You can add JWT or session auth later
         return f(*args, **kwargs)
     return decorated_function
 
-@notification_bp.route('/', methods=['GET'])
-@require_auth
-def get_notifications():
-    """Get all notifications for the authenticated user"""
-    user_id = request.args.get('user_id')
-    status = request.args.get('status')  # 'read', 'unread', or None for all
-    
-    filtered_notifications = notifications_db
-    
-    if user_id:
-        filtered_notifications = [n for n in filtered_notifications if n['user_id'] == user_id]
-    
-    if status:
-        is_read = status.lower() == 'read'
-        filtered_notifications = [n for n in filtered_notifications if n['is_read'] == is_read]
-    
-    return jsonify({
-        'notifications': filtered_notifications,
-        'count': len(filtered_notifications)
-    }), 200
+# ========================================
+# GET ALL NOTIFICATIONS FOR A USER
+# ========================================
+@notification_bp.route('/get_user_notifications/<user_id>', methods=['GET', 'OPTIONS'])
+def get_user_notifications(user_id):
+    """Get all notifications for a specific user"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        with db.engine.connect() as conn:
+            query = text("""
+                SELECT * FROM notifications 
+                WHERE user_id = :user_id 
+                ORDER BY timestamp DESC
+            """)
+            result = conn.execute(query, {'user_id': user_id})
+            
+            notifications = []
+            for row in result:
+                notifications.append({
+                    'id': row.id,
+                    'user_id': row.user_id,
+                    'type': row.type,
+                    'title': row.title,
+                    'message': row.message,
+                    'alertId': row.alert_id,
+                    'alertLocation': row.alert_location,
+                    'resolveTime': row.resolve_time,
+                    'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                    'read': bool(row.read)
+                })
+        
+        return jsonify({
+            'success': True,
+            'notifications': notifications,
+            'count': len(notifications)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
-@notification_bp.route('/<int:notification_id>', methods=['GET'])
-@require_auth
-def get_notification(notification_id):
-    """Get a specific notification by ID"""
-    notification = next((n for n in notifications_db if n['id'] == notification_id), None)
-    
-    if not notification:
-        return jsonify({'error': 'Notification not found'}), 404
-    
-    return jsonify(notification), 200
 
-@notification_bp.route('/', methods=['POST'])
-@require_auth
-def create_notification():
-    """Create a new notification"""
-    global notification_id_counter
-    
-    data = request.get_json()
-    
-    if not data or 'user_id' not in data or 'message' not in data:
-        return jsonify({'error': 'user_id and message are required'}), 400
-    
-    notification = {
-        'id': notification_id_counter,
-        'user_id': data['user_id'],
-        'title': data.get('title', 'New Notification'),
-        'message': data['message'],
-        'type': data.get('type', 'info'),  # info, success, warning, error
-        'is_read': False,
-        'created_at': datetime.utcnow().isoformat(),
-        'metadata': data.get('metadata', {})
-    }
-    
-    notifications_db.append(notification)
-    notification_id_counter += 1
-    
-    return jsonify(notification), 201
+# ========================================
+# MARK NOTIFICATION AS READ
+# ========================================
+@notification_bp.route('/mark_notification_read/<notification_id>', methods=['POST', 'OPTIONS'])
+def mark_notification_read(notification_id):
+    """Mark a specific notification as read"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        with db.engine.connect() as conn:
+            query = text("""
+                UPDATE notifications 
+                SET `read` = TRUE 
+                WHERE id = :notification_id
+            """)
+            conn.execute(query, {'notification_id': notification_id})
+            conn.commit()
+        
+        print(f"✅ Notification {notification_id} marked as read")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Notification marked as read'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
-@notification_bp.route('/<int:notification_id>', methods=['PATCH'])
-@require_auth
-def update_notification(notification_id):
-    """Update a notification (typically to mark as read)"""
-    notification = next((n for n in notifications_db if n['id'] == notification_id), None)
-    
-    if not notification:
-        return jsonify({'error': 'Notification not found'}), 404
-    
-    data = request.get_json()
-    
-    if 'is_read' in data:
-        notification['is_read'] = data['is_read']
-    
-    if 'is_read' in data and data['is_read']:
-        notification['read_at'] = datetime.utcnow().isoformat()
-    
-    return jsonify(notification), 200
 
-@notification_bp.route('/mark-all-read', methods=['POST'])
-@require_auth
+# ========================================
+# MARK ALL NOTIFICATIONS AS READ
+# ========================================
+@notification_bp.route('/mark-all-read', methods=['POST', 'OPTIONS'])
 def mark_all_read():
     """Mark all notifications as read for a user"""
-    data = request.get_json()
-    user_id = data.get('user_id')
-    
-    if not user_id:
-        return jsonify({'error': 'user_id is required'}), 400
-    
-    updated_count = 0
-    for notification in notifications_db:
-        if notification['user_id'] == user_id and not notification['is_read']:
-            notification['is_read'] = True
-            notification['read_at'] = datetime.utcnow().isoformat()
-            updated_count += 1
-    
-    return jsonify({
-        'message': f'{updated_count} notifications marked as read',
-        'updated_count': updated_count
-    }), 200
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': 'user_id is required'
+            }), 400
+        
+        with db.engine.connect() as conn:
+            query = text("""
+                UPDATE notifications 
+                SET `read` = TRUE 
+                WHERE user_id = :user_id AND `read` = FALSE
+            """)
+            result = conn.execute(query, {'user_id': user_id})
+            conn.commit()
+            updated_count = result.rowcount
+        
+        print(f"✅ Marked {updated_count} notifications as read for user {user_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'{updated_count} notifications marked as read',
+            'updated_count': updated_count
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error marking all as read: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
-@notification_bp.route('/<int:notification_id>', methods=['DELETE'])
-@require_auth
+
+# ========================================
+# DELETE NOTIFICATION
+# ========================================
+@notification_bp.route('/<notification_id>', methods=['DELETE', 'OPTIONS'])
 def delete_notification(notification_id):
     """Delete a specific notification"""
-    global notifications_db
-    
-    notification = next((n for n in notifications_db if n['id'] == notification_id), None)
-    
-    if not notification:
-        return jsonify({'error': 'Notification not found'}), 404
-    
-    notifications_db = [n for n in notifications_db if n['id'] != notification_id]
-    
-    return jsonify({'message': 'Notification deleted successfully'}), 200
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        with db.engine.connect() as conn:
+            # Check if notification exists
+            check_query = text("SELECT id FROM notifications WHERE id = :id")
+            result = conn.execute(check_query, {'id': notification_id})
+            
+            if not result.fetchone():
+                return jsonify({
+                    'success': False,
+                    'error': 'Notification not found'
+                }), 404
+            
+            # Delete notification
+            delete_query = text("DELETE FROM notifications WHERE id = :id")
+            conn.execute(delete_query, {'id': notification_id})
+            conn.commit()
+        
+        print(f"✅ Notification {notification_id} deleted")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Notification deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error deleting notification: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
-@notification_bp.route('/bulk-delete', methods=['POST'])
-@require_auth
+
+# ========================================
+# GET UNREAD COUNT
+# ========================================
+@notification_bp.route('/count/<user_id>', methods=['GET', 'OPTIONS'])
+def get_unread_count(user_id):
+    """Get count of unread notifications for a user"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        with db.engine.connect() as conn:
+            query = text("""
+                SELECT COUNT(*) as unread_count 
+                FROM notifications 
+                WHERE user_id = :user_id AND `read` = FALSE
+            """)
+            result = conn.execute(query, {'user_id': user_id})
+            row = result.fetchone()
+            unread_count = row.unread_count if row else 0
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'unread_count': unread_count
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error getting unread count: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ========================================
+# BULK DELETE NOTIFICATIONS
+# ========================================
+@notification_bp.route('/bulk-delete', methods=['POST', 'OPTIONS'])
 def bulk_delete_notifications():
     """Delete multiple notifications"""
-    global notifications_db
-    
-    data = request.get_json()
-    notification_ids = data.get('notification_ids', [])
-    
-    if not notification_ids:
-        return jsonify({'error': 'notification_ids array is required'}), 400
-    
-    initial_count = len(notifications_db)
-    notifications_db = [n for n in notifications_db if n['id'] not in notification_ids]
-    deleted_count = initial_count - len(notifications_db)
-    
-    return jsonify({
-        'message': f'{deleted_count} notifications deleted',
-        'deleted_count': deleted_count
-    }), 200
-
-@notification_bp.route('/count', methods=['GET'])
-@require_auth
-def get_unread_count():
-    """Get count of unread notifications for a user"""
-    user_id = request.args.get('user_id')
-    
-    if not user_id:
-        return jsonify({'error': 'user_id parameter is required'}), 400
-    
-    unread_count = sum(1 for n in notifications_db 
-                       if n['user_id'] == user_id and not n['is_read'])
-    
-    return jsonify({
-        'user_id': user_id,
-        'unread_count': unread_count
-    }), 200
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        data = request.get_json()
+        notification_ids = data.get('notification_ids', [])
+        
+        if not notification_ids:
+            return jsonify({
+                'success': False,
+                'error': 'notification_ids array is required'
+            }), 400
+        
+        with db.engine.connect() as conn:
+            # Convert list to comma-separated string for SQL IN clause
+            placeholders = ','.join([f':id_{i}' for i in range(len(notification_ids))])
+            params = {f'id_{i}': nid for i, nid in enumerate(notification_ids)}
+            
+            query = text(f"DELETE FROM notifications WHERE id IN ({placeholders})")
+            result = conn.execute(query, params)
+            conn.commit()
+            deleted_count = result.rowcount
+        
+        print(f"✅ Deleted {deleted_count} notifications")
+        
+        return jsonify({
+            'success': True,
+            'message': f'{deleted_count} notifications deleted',
+            'deleted_count': deleted_count
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error bulk deleting notifications: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
