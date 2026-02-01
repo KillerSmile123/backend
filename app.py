@@ -11,6 +11,7 @@ import time
 import math
 from queue import Queue
 from threading import Lock
+from onesignal_service import send_push_notification
 
 from sqlalchemy import text
 
@@ -623,6 +624,13 @@ def respond_alert():
         }
         
         save_notification(notification_data)
+
+        send_push_notification(
+            user_id=alert.user_id,
+            title='🚒 Fire Station Response',
+            message=message,
+            data={'alert_id': str(alert_id), 'type': 'response'}
+        )
         
         print(f"✅ Real-time notification sent to user {alert.user_id}")
         
@@ -678,6 +686,13 @@ def resolve_alert_with_time():
         }
         
         save_notification(notification_data)
+
+        send_push_notification(
+            user_id=alert.user_id if alert.user_id else None,
+            title='✅ Fire Alert Resolved',
+            message=f'Fire at {alert.barangay or "your location"} has been extinguished at {resolve_time}.',
+            data={'alert_id': str(alert_id), 'type': 'resolved'}
+        )
         
         print(f"✅ Alert {alert_id} resolved - real-time notification sent")
         
@@ -720,6 +735,13 @@ def delete_alert_new(alert_id):
         }
         
         save_notification(notification_data)
+
+        send_push_notification(
+            user_id=user_id,
+            title='🗑️ Alert Removed',
+            message=f'Your fire alert at {location} has been removed from the system.',
+            data={'alert_id': str(alert_id), 'type': 'deleted'}
+        )
         
         # Delete media from Cloudinary
         if alert.photo_filename and 'cloudinary.com' in alert.photo_filename:
@@ -796,6 +818,13 @@ def mark_spam(alert_id):
         }
         
         save_notification(notification_data)
+
+        send_push_notification(
+            user_id=user_id,
+            title='⚠️ Alert Marked as Spam',
+            message=f'Your fire alert at {location} has been marked as spam.',
+            data={'alert_id': str(alert_id), 'type': 'spam'}
+        )
         
         print(f"✅ Alert {alert_id} marked as spam - real-time notification sent")
         
