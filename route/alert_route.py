@@ -561,8 +561,8 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="image")
-            except:
-                pass
+                except:
+                    pass
             
             if alert.video_filename:
                 try:
@@ -575,8 +575,8 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="video")
-            except:
-                pass
+                except:
+                    pass
             
             db.session.delete(alert)
         
