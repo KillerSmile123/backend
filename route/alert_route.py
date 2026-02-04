@@ -1,4 +1,4 @@
-# alert_route.py - UNIFIED MEDIA UPLOAD (Images + Videos in One Field)
+# alert_route.py - COMPLETE VERSION WITH SPAM HANDLING FIX
 from flask import request, Blueprint, send_file, jsonify
 from database import db
 from model.alert_model import Alert
@@ -32,7 +32,6 @@ def send_alert():
         reporter_name = request.form.get('reporter_name')
         user_id = request.form.get('user_id')
         
-        # ✅ Get both photos and videos from the unified upload
         photos = request.files.getlist('photos')
         videos = request.files.getlist('videos')
 
@@ -45,7 +44,6 @@ def send_alert():
         print(f"  Photos received: {len(photos)}")
         print(f"  Videos received: {len(videos)}")
 
-        # Validation
         if not latitude or not longitude:
             return jsonify({'message': 'Location is required'}), 400
         if not photos and not videos:
@@ -53,7 +51,6 @@ def send_alert():
         if not user_id:
             print("⚠️ Warning: No user_id provided!")
 
-        # ✅ Upload all photos to Cloudinary
         photo_urls = []
         for i, photo in enumerate(photos):
             if photo and photo.filename:
@@ -76,7 +73,6 @@ def send_alert():
                     print(f"❌ Error uploading photo {i+1}: {e}")
                     traceback.print_exc()
         
-        # ✅ Upload all videos to Cloudinary
         video_urls = []
         for i, video in enumerate(videos):
             if video and video.filename:
@@ -99,14 +95,12 @@ def send_alert():
                     print(f"❌ Error uploading video {i+1}: {e}")
                     traceback.print_exc()
 
-        # Check if at least one media was uploaded successfully
         if not photo_urls and not video_urls:
             return jsonify({
                 'message': 'Failed to upload media files',
                 'error': 'All uploads failed'
             }), 500
 
-        # ✅ Store URLs as JSON arrays
         photo_urls_json = json.dumps(photo_urls) if photo_urls else None
         video_urls_json = json.dumps(video_urls) if video_urls else None
         
@@ -114,14 +108,13 @@ def send_alert():
         print(f"  Photo URLs: {photo_urls_json}")
         print(f"  Video URLs: {video_urls_json}")
 
-        # ✅ Save to database
         new_alert = Alert(
             user_id=int(user_id) if user_id else None,
             description=description,
             latitude=float(latitude),
             longitude=float(longitude),
-            photo_filename=photo_urls_json,  # JSON array of photo URLs
-            video_filename=video_urls_json,  # JSON array of video URLs
+            photo_filename=photo_urls_json,
+            video_filename=video_urls_json,
             barangay=barangay,
             reporter_name=reporter_name,
             timestamp=datetime.utcnow(),
@@ -161,17 +154,17 @@ def send_alert():
 
 
 # --------------------------
-# GET ALERTS (PARSE MEDIA URLS)
+# GET ALERTS (ACTIVE ONLY - NOT SPAM, NOT RESOLVED)
 # --------------------------
 @alert_bp.route('/get_alerts', methods=['GET'])
 def get_alerts():
-    """Return all active alerts with parsed media URLs"""
+    """Return all active alerts (not resolved, not spam)"""
     try:
+        # ✅ FIX: Only get alerts that are NOT resolved OR not spam
         alerts = Alert.query.filter_by(resolved=False).order_by(Alert.timestamp.desc()).all()
         
         alerts_list = []
         for alert in alerts:
-            # ✅ Parse photo URLs
             photo_urls = []
             if alert.photo_filename:
                 try:
@@ -181,7 +174,6 @@ def get_alerts():
                 except (json.JSONDecodeError, TypeError):
                     photo_urls = [alert.photo_filename]
             
-            # ✅ Parse video URLs
             video_urls = []
             if alert.video_filename:
                 try:
@@ -199,10 +191,10 @@ def get_alerts():
                 'longitude': alert.longitude,
                 'barangay': alert.barangay,
                 'reporter_name': alert.reporter_name,
-                'photo_urls': photo_urls,  # Array of photo URLs
-                'video_urls': video_urls,  # Array of video URLs
-                'photo_url': photo_urls[0] if photo_urls else None,  # Backwards compatibility
-                'video_url': video_urls[0] if video_urls else None,  # Backwards compatibility
+                'photo_urls': photo_urls,
+                'video_urls': video_urls,
+                'photo_url': photo_urls[0] if photo_urls else None,
+                'video_url': video_urls[0] if video_urls else None,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
                 'status': alert.status or 'pending',
                 'resolved': alert.resolved,
@@ -227,17 +219,53 @@ def get_alerts():
 
 
 # --------------------------
-# GET USER'S ALERTS
+# MARK ALERT AS SPAM ✅ NEW ROUTE
 # --------------------------
-@alert_bp.route('/get_user_alerts/<user_id>', methods=['GET'])
-def get_user_alerts(user_id):
-    """Get all alerts for a specific user with parsed media URLs"""
+@alert_bp.route('/mark_spam/<alert_id>', methods=['POST'])
+def mark_spam(alert_id):
+    """Mark an alert as spam"""
     try:
-        alerts = Alert.query.filter_by(user_id=user_id).order_by(Alert.timestamp.desc()).all()
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        
+        # ✅ FIX: Set status to 'spam' (NOT 'resolved')
+        alert.status = 'spam'
+        alert.resolved = True  # Move it out of active alerts
+        alert.resolved_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        print(f"✅ Alert {alert_id} marked as SPAM (status: {alert.status})")
+        return jsonify({
+            'success': True,
+            'message': 'Alert marked as spam successfully',
+            'alert_id': alert_id,
+            'status': 'spam'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error marking alert as spam: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# GET SPAM ALERTS ✅ NEW ROUTE
+# --------------------------
+@alert_bp.route('/get_spam_alerts', methods=['GET'])
+def get_spam_alerts():
+    """Get all alerts marked as spam"""
+    try:
+        # ✅ Filter by status='spam'
+        spam_alerts = Alert.query.filter_by(status='spam').order_by(Alert.timestamp.desc()).all()
         
         alerts_list = []
-        for alert in alerts:
-            # Parse photo URLs
+        for alert in spam_alerts:
             photo_urls = []
             if alert.photo_filename:
                 try:
@@ -247,7 +275,138 @@ def get_user_alerts(user_id):
                 except (json.JSONDecodeError, TypeError):
                     photo_urls = [alert.photo_filename]
             
-            # Parse video URLs
+            video_urls = []
+            if alert.video_filename:
+                try:
+                    video_urls = json.loads(alert.video_filename)
+                    if not isinstance(video_urls, list):
+                        video_urls = [alert.video_filename]
+                except (json.JSONDecodeError, TypeError):
+                    video_urls = [alert.video_filename]
+            
+            alerts_list.append({
+                'id': alert.id,
+                'user_id': alert.user_id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'photo_urls': photo_urls,
+                'video_urls': video_urls,
+                'photo_url': photo_urls[0] if photo_urls else None,
+                'video_url': video_urls[0] if video_urls else None,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'status': 'spam',
+                'resolved': True,
+                'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None
+            })
+        
+        print(f"📋 Retrieved {len(alerts_list)} spam alerts")
+        return jsonify({
+            'success': True,
+            'alerts': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error fetching spam alerts: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# GET RESOLVED ALERTS (NOT SPAM) ✅ UPDATED
+# --------------------------
+@alert_bp.route('/get_resolved_alerts', methods=['GET'])
+def get_resolved_alerts():
+    """Get all resolved alerts (excluding spam)"""
+    try:
+        # ✅ FIX: Filter out spam alerts
+        resolved_alerts = Alert.query.filter(
+            Alert.resolved == True,
+            Alert.status != 'spam'
+        ).order_by(Alert.resolved_at.desc()).all()
+        
+        alerts_list = []
+        for alert in resolved_alerts:
+            photo_urls = []
+            if alert.photo_filename:
+                try:
+                    photo_urls = json.loads(alert.photo_filename)
+                    if not isinstance(photo_urls, list):
+                        photo_urls = [alert.photo_filename]
+                except (json.JSONDecodeError, TypeError):
+                    photo_urls = [alert.photo_filename]
+            
+            video_urls = []
+            if alert.video_filename:
+                try:
+                    video_urls = json.loads(alert.video_filename)
+                    if not isinstance(video_urls, list):
+                        video_urls = [alert.video_filename]
+                except (json.JSONDecodeError, TypeError):
+                    video_urls = [alert.video_filename]
+            
+            alerts_list.append({
+                'id': alert.id,
+                'user_id': alert.user_id,
+                'description': alert.description,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'barangay': alert.barangay,
+                'reporter_name': alert.reporter_name,
+                'photo_urls': photo_urls,
+                'video_urls': video_urls,
+                'photo_url': photo_urls[0] if photo_urls else None,
+                'video_url': video_urls[0] if video_urls else None,
+                'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
+                'status': alert.status or 'resolved',
+                'resolved': True,
+                'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+                'resolve_time': alert.resolve_time,
+                'admin_response': alert.admin_response
+            })
+        
+        print(f"📋 Retrieved {len(alerts_list)} resolved alerts (excluding spam)")
+        return jsonify({
+            'success': True,
+            'alerts': alerts_list,
+            'count': len(alerts_list)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error fetching resolved alerts: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# --------------------------
+# GET USER'S ALERTS
+# --------------------------
+@alert_bp.route('/get_user_alerts/<user_id>', methods=['GET'])
+def get_user_alerts(user_id):
+    """Get all alerts for a specific user"""
+    try:
+        alerts = Alert.query.filter_by(user_id=user_id).order_by(Alert.timestamp.desc()).all()
+        
+        alerts_list = []
+        for alert in alerts:
+            photo_urls = []
+            if alert.photo_filename:
+                try:
+                    photo_urls = json.loads(alert.photo_filename)
+                    if not isinstance(photo_urls, list):
+                        photo_urls = [alert.photo_filename]
+                except (json.JSONDecodeError, TypeError):
+                    photo_urls = [alert.photo_filename]
+            
             video_urls = []
             if alert.video_filename:
                 try:
@@ -303,7 +462,6 @@ def delete_alert(alert_id):
         if not alert:
             return jsonify({'error': 'Alert not found'}), 404
         
-        # Delete photos from Cloudinary
         if alert.photo_filename:
             try:
                 photo_urls = json.loads(alert.photo_filename)
@@ -319,7 +477,6 @@ def delete_alert(alert_id):
             except:
                 pass
         
-        # Delete videos from Cloudinary
         if alert.video_filename:
             try:
                 video_urls = json.loads(alert.video_filename)
@@ -364,7 +521,6 @@ def clear_alerts(user_id):
         alerts = Alert.query.filter_by(user_id=user_id).all()
         
         for alert in alerts:
-            # Delete photos
             if alert.photo_filename:
                 try:
                     photo_urls = json.loads(alert.photo_filename)
@@ -379,7 +535,6 @@ def clear_alerts(user_id):
                 except:
                     pass
             
-            # Delete videos
             if alert.video_filename:
                 try:
                     video_urls = json.loads(alert.video_filename)
