@@ -348,16 +348,16 @@ def resolve_alert(alert_id):
 
 
 # --------------------------
-# GET RESOLVED ALERTS (NOT SPAM) ✅ UPDATED
+# GET RESOLVED ALERTS (NOT SPAM) ✅ FIXED
 # --------------------------
 @alert_bp.route('/get_resolved_alerts', methods=['GET'])
 def get_resolved_alerts():
-    """Get all resolved alerts (excluding spam)"""
+    """Get all resolved alerts (excluding spam and pending)"""
     try:
-        # ✅ FIX: Filter out spam alerts
+        # ✅ FIXED: Only get alerts with status='resolved' 
+        # This ensures we exclude both spam (status='spam') and pending (status='pending')
         resolved_alerts = Alert.query.filter(
-            Alert.resolved == True,
-            Alert.status != 'spam'
+            Alert.status == 'resolved'
         ).order_by(Alert.resolved_at.desc()).all()
         
         alerts_list = []
@@ -393,17 +393,17 @@ def get_resolved_alerts():
                 'photo_url': photo_urls[0] if photo_urls else None,
                 'video_url': video_urls[0] if video_urls else None,
                 'timestamp': alert.timestamp.isoformat() if alert.timestamp else None,
-                'status': alert.status or 'resolved',
+                'status': 'resolved',
                 'resolved': True,
                 'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
                 'resolve_time': alert.resolve_time,
                 'admin_response': alert.admin_response
             })
         
-        print(f"📋 Retrieved {len(alerts_list)} resolved alerts (excluding spam)")
+        print(f"📋 Retrieved {len(alerts_list)} resolved alerts (excluding spam and pending)")
         return jsonify({
             'success': True,
-            'alerts': alerts_list,
+            'resolved': alerts_list,  # ✅ Changed from 'alerts' to 'resolved' to match your JS
             'count': len(alerts_list)
         }), 200
         
@@ -561,8 +561,8 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="image")
-                except:
-                    pass
+            except:
+                pass
             
             if alert.video_filename:
                 try:
@@ -575,8 +575,8 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="video")
-                except:
-                    pass
+            except:
+                pass
             
             db.session.delete(alert)
         
