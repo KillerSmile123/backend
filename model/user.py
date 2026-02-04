@@ -8,7 +8,7 @@ class User(db.Model):
     address = db.Column(db.String(255))
     mobile = db.Column(db.String(15))
     gmail = db.Column(db.String(100), unique=True)
-
+    player_id = db.Column(db.String(255), nullable=True)  # NEW
 
     def __repr__(self):
         return f'<User {self.email}>'

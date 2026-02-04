@@ -1,9 +1,10 @@
-# notification_route.py - UPDATED with real database
+# notification_route.py - UPDATED with OneSignal Player ID endpoint
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from functools import wraps
 from sqlalchemy import text
 from database import db
+from model.user import User
 import traceback
 
 notification_bp = Blueprint('notifications', __name__)
@@ -16,6 +17,57 @@ def require_auth(f):
         # You can add JWT or session auth later
         return f(*args, **kwargs)
     return decorated_function
+
+
+# ========================================
+# SAVE ONESIGNAL PLAYER ID (NEW ENDPOINT)
+# ========================================
+@notification_bp.route('/user/onesignal', methods=['POST', 'OPTIONS'])
+def save_onesignal_player_id():
+    """Save OneSignal Player ID to user record"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        player_id = data.get('player_id')
+        
+        if not user_id or not player_id:
+            return jsonify({
+                'success': False,
+                'error': 'user_id and player_id are required'
+            }), 400
+        
+        # Find user and update player_id
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not found'
+            }), 404
+        
+        user.player_id = player_id
+        db.session.commit()
+        
+        print(f"✅ Player ID saved for user {user_id}: {player_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Player ID saved successfully',
+            'user_id': user_id,
+            'player_id': player_id
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error saving Player ID: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 # ========================================
 # GET ALL NOTIFICATIONS FOR A USER
@@ -103,7 +155,7 @@ def mark_notification_read(notification_id):
 # ========================================
 # MARK ALL NOTIFICATIONS AS READ
 # ========================================
-@notification_bp.route('/mark-all-read', methods=['POST', 'OPTIONS'])
+@notification_bp.route('/notifications/mark-all-read', methods=['POST', 'OPTIONS'])
 def mark_all_read():
     """Mark all notifications as read for a user"""
     if request.method == 'OPTIONS':
