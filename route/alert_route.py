@@ -319,6 +319,35 @@ def get_spam_alerts():
 
 
 # --------------------------
+# MARK ALERT AS RESOLVED
+# --------------------------
+@alert_bp.route('/resolve_alert/<int:alert_id>', methods=['POST'])
+def resolve_alert(alert_id):
+    try:
+        alert = Alert.query.get(alert_id)
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+
+        alert.status = 'resolved'
+        alert.resolved = True
+        alert.resolved_at = datetime.utcnow()
+
+        db.session.commit()
+
+        print(f"✅ Alert {alert_id} marked RESOLVED")
+
+        return jsonify({
+            'success': True,
+            'message': 'Alert resolved successfully'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("❌ Resolve error:", e)
+        return jsonify({'error': str(e)}), 500
+
+
+# --------------------------
 # GET RESOLVED ALERTS (NOT SPAM) ✅ UPDATED
 # --------------------------
 @alert_bp.route('/get_resolved_alerts', methods=['GET'])
