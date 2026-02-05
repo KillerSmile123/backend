@@ -23,6 +23,7 @@ from model.notification_model import Notification
 from database import init_db, db
 from route.register_route import register_bp
 from route.alert_route import alert_bp
+from route.settings_route import settings_bp
 from route.adminauth_route import login_bp
 from route.userauth_route import auth_bp
 from route.notification_route import notification_bp
@@ -97,6 +98,7 @@ app.register_blueprint(login_bp)
 app.register_blueprint(register_bp)
 app.register_blueprint(alert_bp)
 app.register_blueprint(notification_bp)
+app.register_blueprint(settings_bp)
 
 
 # ========================================
