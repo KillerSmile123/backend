@@ -1,7 +1,6 @@
 # settings_route.py
 import os
 from flask import Blueprint, request, jsonify, send_file
-from werkzeug.utils import secure_filename
 from database import db
 from model.user import User
 from reportlab.lib.pagesizes import letter
@@ -12,126 +11,8 @@ from datetime import datetime
 
 settings_bp = Blueprint('settings', __name__)
 
-# Configuration
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BACKEND_DIR, 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 # ===========================
-# 1. PROFILE SETTINGS
-# ===========================
-
-@settings_bp.route('/api/user/profile/<int:user_id>', methods=['GET'])
-def get_user_profile(user_id):
-    """Get user profile information"""
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"success": False, "message": "User not found"}), 404
-        
-        return jsonify({
-            "success": True,
-            "user": {
-                "id": user.id,
-                "fullname": user.fullname,
-                "address": user.address,
-                "mobile": user.mobile,
-                "gmail": user.gmail,
-                "profile_picture": getattr(user, "profile_picture", None)
-            }
-        }), 200
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@settings_bp.route('/api/user/profile/<int:user_id>', methods=['PUT'])
-def update_user_profile(user_id):
-    """Update user profile information"""
-    try:
-        data = request.json
-        user = User.query.get(user_id)
-        
-        if not user:
-            return jsonify({"success": False, "message": "User not found"}), 404
-
-        # Update fields if provided
-        if 'fullname' in data:
-            user.fullname = data['fullname']
-        
-        if 'gmail' in data:
-            # Check if email already exists for another user
-            existing_user = User.query.filter(User.gmail == data['gmail'], User.id != user_id).first()
-            if existing_user:
-                return jsonify({"success": False, "message": "Email already in use"}), 400
-            user.gmail = data['gmail']
-        
-        if 'mobile' in data:
-            user.mobile = data['mobile']
-        
-        if 'address' in data:
-            user.address = data['address']
-
-        db.session.commit()
-        
-        return jsonify({
-            "success": True,
-            "message": "Profile updated successfully"
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@settings_bp.route('/api/user/profile-picture/<int:user_id>', methods=['POST'])
-def change_profile_picture(user_id):
-    """Upload and update user profile picture"""
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"success": False, "message": "User not found"}), 404
-
-        if 'profile_picture' not in request.files:
-            return jsonify({"success": False, "message": "No file uploaded"}), 400
-
-        file = request.files['profile_picture']
-        
-        if file.filename == '':
-            return jsonify({"success": False, "message": "No file selected"}), 400
-
-        if file and allowed_file(file.filename):
-            # Create secure filename
-            ext = file.filename.rsplit('.', 1)[1].lower()
-            filename = f"profile_{user_id}.{ext}"
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            
-            # Save file
-            file.save(filepath)
-            
-            # Note: You may need to add 'profile_picture' column to User model
-            # Uncomment below when column is added:
-            # user.profile_picture = filename
-            # db.session.commit()
-            
-            return jsonify({
-                "success": True,
-                "message": "Profile picture updated successfully",
-                "filename": filename
-            }), 200
-        else:
-            return jsonify({"success": False, "message": "Invalid file type. Use PNG, JPG, JPEG, GIF, or WEBP"}), 400
-            
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-# ===========================
-# 5. PRIVACY & SECURITY
+# 1. PRIVACY & SECURITY
 # ===========================
 
 @settings_bp.route('/api/alerts/user/<int:user_id>', methods=['DELETE'])
@@ -170,12 +51,6 @@ def delete_account(user_id):
         # from model.alert_model import Alert
         # Alert.query.filter_by(user_id=user_id).delete()
         
-        # Delete profile picture if exists
-        if hasattr(user, 'profile_picture') and user.profile_picture:
-            profile_path = os.path.join(UPLOAD_FOLDER, user.profile_picture)
-            if os.path.exists(profile_path):
-                os.remove(profile_path)
-        
         # Delete user
         db.session.delete(user)
         db.session.commit()
@@ -191,7 +66,7 @@ def delete_account(user_id):
 
 
 # ===========================
-# 7. FIRE SAFETY TOOLS
+# 2. FIRE SAFETY TOOLS
 # ===========================
 
 @settings_bp.route('/api/fire/contacts/pdf', methods=['GET'])
@@ -247,7 +122,7 @@ def download_contacts_pdf():
         
         # Footer
         p.setFont("Helvetica-Oblique", 9)
-        p.drawString(1*inch, 0.5*inch, "S.U.N.O.G - Fire Incident Reporting System")
+        p.drawString(1*inch, 0.5*inch, "FireTrackr - Fire Incident Reporting System")
         p.drawString(1*inch, 0.3*inch, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         p.showPage()
