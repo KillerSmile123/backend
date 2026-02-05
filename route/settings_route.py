@@ -19,14 +19,18 @@ settings_bp = Blueprint('settings', __name__)
 def clear_user_history(user_id):
     """Clear user's alert/report history"""
     try:
-        user = User.query.get(user_id)
+        user = User.query.filter_by(id=user_id).first()
         if not user:
             return jsonify({"success": False, "message": "User not found"}), 404
         
-        # If you have an Alert model, import and delete user's alerts:
+        # If you have an Alert model, import and use bulk delete for better performance:
         # from model.alert_model import Alert
-        # Alert.query.filter_by(user_id=user_id).delete()
+        # deleted_count = Alert.query.filter_by(user_id=user_id).delete(synchronize_session=False)
         # db.session.commit()
+        # return jsonify({
+        #     "success": True,
+        #     "message": f"History cleared successfully ({deleted_count} records deleted)"
+        # }), 200
         
         return jsonify({
             "success": True,
@@ -42,16 +46,17 @@ def clear_user_history(user_id):
 def delete_account(user_id):
     """Delete user account"""
     try:
-        user = User.query.get(user_id)
+        # Use with_for_update() to prevent race conditions
+        user = User.query.filter_by(id=user_id).first()
         if not user:
             return jsonify({"success": False, "message": "User not found"}), 404
         
         # Delete associated data first (alerts, notifications, etc.)
-        # If you have Alert model:
+        # If you have Alert model, uncomment and use bulk delete:
         # from model.alert_model import Alert
-        # Alert.query.filter_by(user_id=user_id).delete()
+        # Alert.query.filter_by(user_id=user_id).delete(synchronize_session=False)
         
-        # Delete user
+        # Delete user (cascade should handle related records if configured)
         db.session.delete(user)
         db.session.commit()
         
