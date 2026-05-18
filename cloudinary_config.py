@@ -3,6 +3,7 @@ import cloudinary.uploader
 import os
 from dotenv import load_dotenv
 import sys
+import traceback
 
 load_dotenv()
 
@@ -12,7 +13,6 @@ def init_cloudinary():
     api_key = os.getenv('CLOUDINARY_API_KEY')
     api_secret = os.getenv('CLOUDINARY_API_SECRET')
     
-    # Debug logging
     print(f"🔍 Cloudinary Config Check:")
     print(f"  Cloud Name: {'✅ Set' if cloud_name else '❌ Missing'}")
     print(f"  API Key: {'✅ Set' if api_key else '❌ Missing'}")
@@ -32,12 +32,12 @@ def init_cloudinary():
 def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
     """
     Upload a file to Cloudinary
-    
+
     Args:
         file: File object from request.files
         folder: Cloudinary folder name
         resource_type: 'image', 'video', or 'auto'
-    
+
     Returns:
         dict: Upload result with secure_url and public_id
     """
@@ -46,30 +46,48 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
         print(f"  Folder: {folder}")
         print(f"  Resource Type: {resource_type}")
         print(f"  File: {file.filename if hasattr(file, 'filename') else 'Unknown'}")
-        
-        result = cloudinary.uploader.upload(
-            file,
-            folder=folder,
-            resource_type=resource_type,
-            transformation=[
+        print(f"  Content-Type: {file.content_type if hasattr(file, 'content_type') else 'Unknown'}")
+
+        # ✅ Read raw bytes instead of passing FileStorage directly
+        file.stream.seek(0)
+        file_bytes = file.stream.read()
+
+        print(f"  File size: {len(file_bytes)} bytes")
+
+        if len(file_bytes) == 0:
+            return {'success': False, 'error': 'File is empty (0 bytes)'}
+
+        upload_options = {
+            'folder': folder,
+            'resource_type': resource_type,
+        }
+
+        if resource_type == "image":
+            upload_options['transformation'] = [
                 {'quality': 'auto'},
                 {'fetch_format': 'auto'}
             ]
-        )
-        
+        elif resource_type == "video":
+            upload_options['transformation'] = [
+                {'quality': 'auto'}
+            ]
+
+        # ✅ Pass bytes, not the FileStorage object
+        result = cloudinary.uploader.upload(file_bytes, **upload_options)
+
         print(f"✅ Upload successful!")
         print(f"  URL: {result['secure_url']}")
         print(f"  Public ID: {result['public_id']}")
-        
+
         return {
             'success': True,
             'url': result['secure_url'],
             'public_id': result['public_id']
         }
+
     except Exception as e:
         print(f"❌ Cloudinary upload error: {str(e)}")
         print(f"  Error type: {type(e).__name__}")
-        import traceback
         traceback.print_exc()
         return {
             'success': False,
@@ -79,11 +97,11 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
 def delete_from_cloudinary(public_id, resource_type="image"):
     """
     Delete a file from Cloudinary
-    
+
     Args:
         public_id: The Cloudinary public_id
         resource_type: 'image' or 'video'
-    
+
     Returns:
         dict: Result of deletion
     """
