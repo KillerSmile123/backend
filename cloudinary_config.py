@@ -1,9 +1,10 @@
 import cloudinary
 import cloudinary.uploader
 import os
-from dotenv import load_dotenv
+import io
 import sys
 import traceback
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -48,7 +49,7 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
         print(f"  File: {file.filename if hasattr(file, 'filename') else 'Unknown'}")
         print(f"  Content-Type: {file.content_type if hasattr(file, 'content_type') else 'Unknown'}")
 
-        # ✅ Read raw bytes instead of passing FileStorage directly
+        # Read raw bytes from stream
         file.stream.seek(0)
         file_bytes = file.stream.read()
 
@@ -56,6 +57,10 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
 
         if len(file_bytes) == 0:
             return {'success': False, 'error': 'File is empty (0 bytes)'}
+
+        # ✅ Wrap in BytesIO with .name so Cloudinary detects format correctly
+        file_buffer = io.BytesIO(file_bytes)
+        file_buffer.name = file.filename or f"upload.{'jpg' if resource_type == 'image' else 'mp4'}"
 
         upload_options = {
             'folder': folder,
@@ -72,8 +77,8 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
                 {'quality': 'auto'}
             ]
 
-        # ✅ Pass bytes, not the FileStorage object
-        result = cloudinary.uploader.upload(file_bytes, **upload_options)
+        # ✅ Pass BytesIO buffer instead of raw bytes or FileStorage
+        result = cloudinary.uploader.upload(file_buffer, **upload_options)
 
         print(f"✅ Upload successful!")
         print(f"  URL: {result['secure_url']}")
