@@ -1,24 +1,23 @@
 # database.py
-
+import os
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask
 
 db = SQLAlchemy()
 
 def init_db(app: Flask):
-    # Railway MySQL credentials (from your mysql command)
-    user = "root"
-    password = "haeBEYARIvWORZkhUctpVRNscoYSEgaZ"
-    host = "switchback.proxy.rlwy.net"
-    port = "58700"
-    name = "railway"  # Replace with your actual database name if different
+    user = os.environ.get('DB_USER', 'root')
+    password = os.environ.get('DB_PASSWORD', 'JMrwDaBfVhJpWyIPsvEFraVrhmoEgkld')
+    host = os.environ.get('DB_HOST', 'tramway.proxy.rlwy.net')
+    port = os.environ.get('DB_PORT', '58046')
+    name = os.environ.get('DB_NAME', 'railway')
 
-    # SQLAlchemy connection string
     app.config['SQLALCHEMY_DATABASE_URI'] = (
-        f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}?charset=utf8mb4"
+        f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}"
+        f"?charset=utf8mb4"
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+    
     db.init_app(app)
 
     # Optional: test connection
