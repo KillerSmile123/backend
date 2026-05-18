@@ -15,6 +15,10 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BACKEND_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Max file sizes
+MAX_IMAGE_SIZE = 10 * 1024 * 1024   # 10MB — Cloudinary free tier limit
+MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+
 
 # --------------------------
 # SEND ALERT (UNIFIED MEDIA)
@@ -50,6 +54,35 @@ def send_alert():
             return jsonify({'message': 'At least one photo or video is required'}), 400
         if not user_id:
             print("⚠️ Warning: No user_id provided!")
+
+        # ✅ Validate file sizes before uploading to Cloudinary
+        for i, photo in enumerate(photos):
+            if photo and photo.filename:
+                photo.seek(0, 2)  # Seek to end to get size
+                file_size = photo.tell()
+                photo.seek(0)     # Reset for upload
+
+                print(f"  Photo {i+1} size: {file_size} bytes ({file_size / 1024 / 1024:.1f}MB)")
+
+                if file_size > MAX_IMAGE_SIZE:
+                    return jsonify({
+                        'message': f'Photo {i+1} is too large ({file_size / 1024 / 1024:.1f}MB). Maximum allowed is {MAX_IMAGE_SIZE // (1024 * 1024)}MB.',
+                        'error': 'File too large'
+                    }), 400
+
+        for i, video in enumerate(videos):
+            if video and video.filename:
+                video.seek(0, 2)
+                file_size = video.tell()
+                video.seek(0)
+
+                print(f"  Video {i+1} size: {file_size} bytes ({file_size / 1024 / 1024:.1f}MB)")
+
+                if file_size > MAX_VIDEO_SIZE:
+                    return jsonify({
+                        'message': f'Video {i+1} is too large ({file_size / 1024 / 1024:.1f}MB). Maximum allowed is {MAX_VIDEO_SIZE // (1024 * 1024)}MB.',
+                        'error': 'File too large'
+                    }), 400
 
         photo_urls = []
         for i, photo in enumerate(photos):
