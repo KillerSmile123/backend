@@ -546,7 +546,7 @@ def delete_alert(alert_id):
                                 public_id = '/'.join(parts[idx:]).split('.')[0]
                                 delete_from_cloudinary(public_id, resource_type="image")
                                 print(f"🗑️ Deleted photo: {public_id}")
-            except:
+            except Exception:
                 pass
         
         if alert.video_filename:
@@ -561,7 +561,7 @@ def delete_alert(alert_id):
                                 public_id = '/'.join(parts[idx:]).split('.')[0]
                                 delete_from_cloudinary(public_id, resource_type="video")
                                 print(f"🗑️ Deleted video: {public_id}")
-            except:
+            except Exception:
                 pass
         
         db.session.delete(alert)
@@ -604,7 +604,7 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="image")
-                except:
+                except Exception:
                     pass
             
             if alert.video_filename:
@@ -618,7 +618,7 @@ def clear_alerts(user_id):
                                     idx = parts.index('fire_alerts')
                                     public_id = '/'.join(parts[idx:]).split('.')[0]
                                     delete_from_cloudinary(public_id, resource_type="video")
-                except:
+                except Exception:
                     pass
             
             db.session.delete(alert)

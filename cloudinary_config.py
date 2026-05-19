@@ -30,6 +30,8 @@ def init_cloudinary():
         secure=True
     )
 
+
+
 def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
     """
     Upload a file to Cloudinary

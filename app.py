@@ -139,7 +139,7 @@ def send_sse_notification(user_id, notification_data):
                 try:
                     queue.put(notification_data)
                     print(f"📤 SSE notification sent to user {user_id}")
-                except:
+                except Exception:
                     dead_queues.append(queue)
             
             # Clean up dead connections
@@ -171,7 +171,7 @@ def sse_notifications(user_id):
                     # Wait for notification with timeout
                     notification = queue.get(timeout=30)
                     yield f"data: {json.dumps(notification)}\n\n"
-                except:
+                except Exception:
                     # Send heartbeat every 30 seconds to keep connection alive
                     yield f": heartbeat\n\n"
                     
@@ -1162,21 +1162,24 @@ def create_notification():
     data = request.json
     user_id = data.get('user_id')
     message = data.get('message')
-    type = data.get('type', 'info')
+    ntype = data.get('type', 'info')
+    title = data.get('title', 'Notification')
     
     # Create notification in database
     notification = Notification(
-        user_id=user_id,
+        id=f'notif_admin_{get_philippine_timestamp()}',
+        user_id=str(user_id),
+        type=ntype,
+        title=title,
         message=message,
-        type=type,
-        is_read=False
+        read=False
     )
     db.session.add(notification)
     db.session.commit()
     
     return jsonify({
         'success': True,
-        'notification': notification.to_dict()
+        'message': 'Notification created'
     }), 201
 
 @app.route('/favicon.ico')
@@ -1190,7 +1193,7 @@ def favicon():
 def mark_as_read(notification_id):
     notification = Notification.query.get(notification_id)
     if notification:
-        notification.is_read = True
+        notification.read = True
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'error': 'Notification not found'}), 404
