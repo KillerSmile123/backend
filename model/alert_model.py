@@ -1,5 +1,5 @@
 from database import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 class Alert(db.Model):
     __tablename__ = 'alerts'
@@ -14,7 +14,7 @@ class Alert(db.Model):
     longitude = db.Column(db.Float, nullable=False)
     photo_filename = db.Column(db.String(500), nullable=True)
     video_filename = db.Column(db.String(500), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     # ✅ Reporter information fields
     barangay = db.Column(db.String(255), nullable=True)

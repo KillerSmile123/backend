@@ -1050,7 +1050,7 @@ def resolve_alert(alert_id):
             return jsonify({'message': 'Alert not found'}), 404
         
         alert.resolved = True
-        alert.resolved_at = datetime.utcnow()
+        alert.resolved_at = get_philippine_time()
         
         db.session.commit()
         

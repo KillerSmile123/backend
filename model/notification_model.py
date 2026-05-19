@@ -1,6 +1,6 @@
 # notification_model.py
 from database import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -13,5 +13,5 @@ class Notification(db.Model):
     alert_id = db.Column(db.String(100), nullable=True)
     alert_location = db.Column(db.String(200), nullable=True)
     resolve_time = db.Column(db.String(50), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     read = db.Column(db.Boolean, default=False, nullable=False)
