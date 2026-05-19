@@ -42,6 +42,9 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
     Returns:
         dict: Upload result with secure_url and public_id
     """
+    import tempfile
+
+    temp_path = None
     try:
         print(f"🔄 Starting Cloudinary upload...")
         print(f"  Folder: {folder}")
@@ -58,27 +61,22 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
         if len(file_bytes) == 0:
             return {'success': False, 'error': 'File is empty (0 bytes)'}
 
-        # ✅ Wrap in BytesIO with .name so Cloudinary detects format correctly
-        file_buffer = io.BytesIO(file_bytes)
-        file_buffer.name = file.filename or f"upload.{'jpg' if resource_type == 'image' else 'mp4'}"
+        # ✅ Save to temp file — most reliable method for Cloudinary SDK
+        # BytesIO wrapping can fail with certain SDK versions / Python 3.13
+        ext = os.path.splitext(file.filename or '')[1] or ('.jpg' if resource_type == 'image' else '.mp4')
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_bytes)
+            temp_path = tmp.name
+
+        print(f"  Temp file: {temp_path}")
 
         upload_options = {
             'folder': folder,
             'resource_type': resource_type,
         }
 
-        if resource_type == "image":
-            upload_options['transformation'] = [
-                {'quality': 'auto'},
-                {'fetch_format': 'auto'}
-            ]
-        elif resource_type == "video":
-            upload_options['transformation'] = [
-                {'quality': 'auto'}
-            ]
-
-        # ✅ Pass BytesIO buffer instead of raw bytes or FileStorage
-        result = cloudinary.uploader.upload(file_buffer, **upload_options)
+        # ✅ Upload from file path — Cloudinary handles this natively
+        result = cloudinary.uploader.upload(temp_path, **upload_options)
 
         print(f"✅ Upload successful!")
         print(f"  URL: {result['secure_url']}")
@@ -98,6 +96,13 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
             'success': False,
             'error': str(e)
         }
+    finally:
+        # Clean up temp file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
 
 def delete_from_cloudinary(public_id, resource_type="image"):
     """

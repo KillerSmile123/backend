@@ -5,7 +5,7 @@ from model.alert_model import Alert
 import os
 import traceback
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from cloudinary_config import upload_to_cloudinary, delete_from_cloudinary
 
@@ -85,6 +85,7 @@ def send_alert():
                     }), 400
 
         photo_urls = []
+        upload_errors = []
         for i, photo in enumerate(photos):
             if photo and photo.filename:
                 try:
@@ -100,9 +101,13 @@ def send_alert():
                         photo_urls.append(photo_url)
                         print(f"✅ Photo {i+1} uploaded: {photo_url}")
                     else:
-                        print(f"❌ Photo {i+1} upload failed: {photo_result['error']}")
+                        error_msg = f"Photo {i+1}: {photo_result['error']}"
+                        upload_errors.append(error_msg)
+                        print(f"❌ {error_msg}")
                         
                 except Exception as e:
+                    error_msg = f"Photo {i+1}: {str(e)}"
+                    upload_errors.append(error_msg)
                     print(f"❌ Error uploading photo {i+1}: {e}")
                     traceback.print_exc()
         
@@ -122,16 +127,21 @@ def send_alert():
                         video_urls.append(video_url)
                         print(f"✅ Video {i+1} uploaded: {video_url}")
                     else:
-                        print(f"❌ Video {i+1} upload failed: {video_result['error']}")
+                        error_msg = f"Video {i+1}: {video_result['error']}"
+                        upload_errors.append(error_msg)
+                        print(f"❌ {error_msg}")
                         
                 except Exception as e:
+                    error_msg = f"Video {i+1}: {str(e)}"
+                    upload_errors.append(error_msg)
                     print(f"❌ Error uploading video {i+1}: {e}")
                     traceback.print_exc()
 
         if not photo_urls and not video_urls:
             return jsonify({
                 'message': 'Failed to upload media files',
-                'error': 'All uploads failed'
+                'error': 'All uploads failed',
+                'upload_errors': upload_errors
             }), 500
 
         photo_urls_json = json.dumps(photo_urls) if photo_urls else None
@@ -150,7 +160,7 @@ def send_alert():
             video_filename=video_urls_json,
             barangay=barangay,
             reporter_name=reporter_name,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             status='pending',
             resolved=False
         )
@@ -265,7 +275,7 @@ def mark_spam(alert_id):
         # ✅ FIX: Set status to 'spam' (NOT 'resolved')
         alert.status = 'spam'
         alert.resolved = True  # Move it out of active alerts
-        alert.resolved_at = datetime.utcnow()
+        alert.resolved_at = datetime.now(timezone.utc)
         
         db.session.commit()
         
@@ -363,7 +373,7 @@ def resolve_alert(alert_id):
 
         alert.status = 'resolved'
         alert.resolved = True
-        alert.resolved_at = datetime.utcnow()
+        alert.resolved_at = datetime.now(timezone.utc)
 
         db.session.commit()
 
