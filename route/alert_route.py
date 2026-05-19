@@ -108,7 +108,7 @@ def send_alert():
                     filename=photo_data['filename'],
                     content_type=photo_data['content_type'],
                     folder="fire_alerts/photos",
-                    resource_type="image"
+                    resource_type="auto"
                 )
 
                 if photo_result['success']:

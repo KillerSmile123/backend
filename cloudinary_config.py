@@ -35,7 +35,6 @@ def init_cloudinary():
 def upload_to_cloudinary(file_or_bytes, folder="fire_alerts", resource_type="auto", filename=None, content_type=None):
     import base64
     try:
-        # Handle both raw bytes and file objects
         if isinstance(file_or_bytes, bytes):
             file_bytes = file_or_bytes
             content_type = content_type or 'application/octet-stream'
@@ -50,17 +49,32 @@ def upload_to_cloudinary(file_or_bytes, folder="fire_alerts", resource_type="aut
         if len(file_bytes) == 0:
             return {'success': False, 'error': 'File is empty (0 bytes)'}
 
-        # Detect type from magic bytes
+        # ✅ Detect type from magic bytes
         if file_bytes[:3] == b'\xff\xd8\xff':
             content_type = 'image/jpeg'
+            resource_type = 'image'
         elif file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
             content_type = 'image/png'
+            resource_type = 'image'
         elif file_bytes[:4] == b'RIFF' and file_bytes[8:12] == b'WEBP':
             content_type = 'image/webp'
-        elif file_bytes[:4] in (b'\x00\x00\x00\x1c', b'\x00\x00\x00\x18', b'\x00\x00\x00 '):
-            content_type = 'video/mp4'
+            resource_type = 'image'
+        elif b'ftyp' in file_bytes[:12]:
+            # ✅ HEIC/HEIF/MP4 container — Android phones often send these as "jpg"
+            # Check if it's heic/heif or mp4
+            ftyp_brand = file_bytes[8:12]
+            if ftyp_brand in (b'heic', b'heix', b'mif1', b'msf1'):
+                content_type = 'image/heic'
+                resource_type = 'image'
+            else:
+                content_type = 'video/mp4'
+                resource_type = 'video'
+        else:
+            # ✅ Fallback: let Cloudinary auto-detect
+            resource_type = 'auto'
 
         print(f"  Detected content type: {content_type}")
+        print(f"  Using resource_type: {resource_type}")
 
         b64_data = base64.b64encode(file_bytes).decode('utf-8')
         data_uri = f"data:{content_type};base64,{b64_data}"
