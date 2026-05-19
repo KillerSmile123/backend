@@ -32,39 +32,25 @@ def init_cloudinary():
 
 
 
-def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
-    """
-    Upload a file to Cloudinary
-
-    Args:
-        file: File object from request.files
-        folder: Cloudinary folder name
-        resource_type: 'image', 'video', or 'auto'
-
-    Returns:
-        dict: Upload result with secure_url and public_id
-    """
+def upload_to_cloudinary(file_or_bytes, folder="fire_alerts", resource_type="auto", filename=None, content_type=None):
     import base64
-
     try:
-        print(f"🔄 Starting Cloudinary upload...")
-        print(f"  Folder: {folder}")
-        print(f"  Resource Type: {resource_type}")
-        print(f"  File: {file.filename if hasattr(file, 'filename') else 'Unknown'}")
-        print(f"  Content-Type: {file.content_type if hasattr(file, 'content_type') else 'Unknown'}")
-
-        # Read raw bytes from stream
-        file.stream.seek(0)
-        file_bytes = file.stream.read()
+        # Handle both raw bytes and file objects
+        if isinstance(file_or_bytes, bytes):
+            file_bytes = file_or_bytes
+            content_type = content_type or 'application/octet-stream'
+        else:
+            file_or_bytes.stream.seek(0)
+            file_bytes = file_or_bytes.stream.read()
+            content_type = file_or_bytes.content_type or 'application/octet-stream'
 
         print(f"  File size: {len(file_bytes)} bytes")
-        print(f"  First 16 bytes (hex): {file_bytes[:16].hex()}")
+        print(f"  First 16 bytes: {file_bytes[:16].hex()}")
 
         if len(file_bytes) == 0:
             return {'success': False, 'error': 'File is empty (0 bytes)'}
 
-        # Detect content type from file header (magic bytes)
-        content_type = file.content_type or 'application/octet-stream'
+        # Detect type from magic bytes
         if file_bytes[:3] == b'\xff\xd8\xff':
             content_type = 'image/jpeg'
         elif file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
@@ -76,20 +62,10 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
 
         print(f"  Detected content type: {content_type}")
 
-        # ✅ Upload via base64 data URI — most reliable across all environments
         b64_data = base64.b64encode(file_bytes).decode('utf-8')
         data_uri = f"data:{content_type};base64,{b64_data}"
 
-        upload_options = {
-            'folder': folder,
-            'resource_type': resource_type,
-        }
-
-        result = cloudinary.uploader.upload(data_uri, **upload_options)
-
-        print(f"✅ Upload successful!")
-        print(f"  URL: {result['secure_url']}")
-        print(f"  Public ID: {result['public_id']}")
+        result = cloudinary.uploader.upload(data_uri, folder=folder, resource_type=resource_type)
 
         return {
             'success': True,
@@ -99,12 +75,8 @@ def upload_to_cloudinary(file, folder="fire_alerts", resource_type="auto"):
 
     except Exception as e:
         print(f"❌ Cloudinary upload error: {str(e)}")
-        print(f"  Error type: {type(e).__name__}")
         traceback.print_exc()
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': str(e)}
 
 def delete_from_cloudinary(public_id, resource_type="image"):
     """

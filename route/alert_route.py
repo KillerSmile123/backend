@@ -55,12 +55,12 @@ def send_alert():
         if not user_id:
             print("⚠️ Warning: No user_id provided!")
 
-        # ✅ Validate file sizes before uploading to Cloudinary
+        # ✅ Read all photo bytes first (avoids seek/tell issues on Render)
+        photo_data_list = []
         for i, photo in enumerate(photos):
             if photo and photo.filename:
-                photo.seek(0, 2)  # Seek to end to get size
-                file_size = photo.tell()
-                photo.seek(0)     # Reset for upload
+                photo_bytes = photo.read()  # Read once into memory
+                file_size = len(photo_bytes)
 
                 print(f"  Photo {i+1} size: {file_size} bytes ({file_size / 1024 / 1024:.1f}MB)")
 
@@ -70,11 +70,18 @@ def send_alert():
                         'error': 'File too large'
                     }), 400
 
+                photo_data_list.append({
+                    'bytes': photo_bytes,
+                    'filename': photo.filename,
+                    'content_type': photo.content_type
+                })
+
+        # ✅ Read all video bytes first (avoids seek/tell issues on Render)
+        video_data_list = []
         for i, video in enumerate(videos):
             if video and video.filename:
-                video.seek(0, 2)
-                file_size = video.tell()
-                video.seek(0)
+                video_bytes = video.read()  # Read once into memory
+                file_size = len(video_bytes)
 
                 print(f"  Video {i+1} size: {file_size} bytes ({file_size / 1024 / 1024:.1f}MB)")
 
@@ -84,58 +91,66 @@ def send_alert():
                         'error': 'File too large'
                     }), 400
 
+                video_data_list.append({
+                    'bytes': video_bytes,
+                    'filename': video.filename,
+                    'content_type': video.content_type
+                })
+
+        # ✅ Upload photos using raw bytes
         photo_urls = []
         upload_errors = []
-        for i, photo in enumerate(photos):
-            if photo and photo.filename:
-                try:
-                    print(f"📤 Uploading photo {i+1}/{len(photos)}: {photo.filename}")
-                    photo_result = upload_to_cloudinary(
-                        photo, 
-                        folder="fire_alerts/photos", 
-                        resource_type="image"
-                    )
-                    
-                    if photo_result['success']:
-                        photo_url = photo_result['url']
-                        photo_urls.append(photo_url)
-                        print(f"✅ Photo {i+1} uploaded: {photo_url}")
-                    else:
-                        error_msg = f"Photo {i+1}: {photo_result['error']}"
-                        upload_errors.append(error_msg)
-                        print(f"❌ {error_msg}")
-                        
-                except Exception as e:
-                    error_msg = f"Photo {i+1}: {str(e)}"
+        for i, photo_data in enumerate(photo_data_list):
+            try:
+                print(f"📤 Uploading photo {i+1}/{len(photo_data_list)}: {photo_data['filename']}")
+                photo_result = upload_to_cloudinary(
+                    photo_data['bytes'],
+                    filename=photo_data['filename'],
+                    content_type=photo_data['content_type'],
+                    folder="fire_alerts/photos",
+                    resource_type="image"
+                )
+
+                if photo_result['success']:
+                    photo_urls.append(photo_result['url'])
+                    print(f"✅ Photo {i+1} uploaded: {photo_result['url']}")
+                else:
+                    error_msg = f"Photo {i+1}: {photo_result['error']}"
                     upload_errors.append(error_msg)
-                    print(f"❌ Error uploading photo {i+1}: {e}")
-                    traceback.print_exc()
-        
+                    print(f"❌ {error_msg}")
+
+            except Exception as e:
+                error_msg = f"Photo {i+1}: {str(e)}"
+                upload_errors.append(error_msg)
+                print(f"❌ Error uploading photo {i+1}: {e}")
+                traceback.print_exc()
+
+        # ✅ Upload videos using raw bytes
         video_urls = []
-        for i, video in enumerate(videos):
-            if video and video.filename:
-                try:
-                    print(f"📤 Uploading video {i+1}/{len(videos)}: {video.filename}")
-                    video_result = upload_to_cloudinary(
-                        video, 
-                        folder="fire_alerts/videos", 
-                        resource_type="video"
-                    )
-                    
-                    if video_result['success']:
-                        video_url = video_result['url']
-                        video_urls.append(video_url)
-                        print(f"✅ Video {i+1} uploaded: {video_url}")
-                    else:
-                        error_msg = f"Video {i+1}: {video_result['error']}"
-                        upload_errors.append(error_msg)
-                        print(f"❌ {error_msg}")
-                        
-                except Exception as e:
-                    error_msg = f"Video {i+1}: {str(e)}"
+        for i, video_data in enumerate(video_data_list):
+            try:
+                print(f"📤 Uploading video {i+1}/{len(video_data_list)}: {video_data['filename']}")
+                video_result = upload_to_cloudinary(
+                    video_data['bytes'],
+                    filename=video_data['filename'],
+                    content_type=video_data['content_type'],
+                    folder="fire_alerts/videos",
+                    resource_type="video"
+                )
+
+                if video_result['success']:
+                    video_urls.append(video_result['url'])
+                    print(f"✅ Video {i+1} uploaded: {video_result['url']}")
+                else:
+                    error_msg = f"Video {i+1}: {video_result['error']}"
                     upload_errors.append(error_msg)
-                    print(f"❌ Error uploading video {i+1}: {e}")
-                    traceback.print_exc()
+                    print(f"❌ {error_msg}")
+
+            except Exception as e:
+                error_msg = f"Video {i+1}: {str(e)}"
+                upload_errors.append(error_msg)
+                print(f"❌ Error uploading video {i+1}: {e}")
+                traceback.print_exc()
 
         if not photo_urls and not video_urls:
             return jsonify({
@@ -146,7 +161,7 @@ def send_alert():
 
         photo_urls_json = json.dumps(photo_urls) if photo_urls else None
         video_urls_json = json.dumps(video_urls) if video_urls else None
-        
+
         print(f"💾 Saving to database:")
         print(f"  Photo URLs: {photo_urls_json}")
         print(f"  Video URLs: {video_urls_json}")
@@ -164,7 +179,7 @@ def send_alert():
             status='pending',
             resolved=False
         )
-        
+
         db.session.add(new_alert)
         db.session.commit()
 
